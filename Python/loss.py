@@ -4,6 +4,12 @@ File containing custom loss functions
 from keras import backend as K
 import tensorflow as tf
 import numpy as np
+import os
+import tempfile
+
+# from PIL import Image
+from keras_preprocessing.image import array_to_img
+import shutil
 
 dummy_loss_var = K.variable(0.0)
 
@@ -66,3 +72,23 @@ def rmse(y_true, y_pred):
     :return: RMSE value
     """
     return K.sqrt(K.mean(K.square(y_pred - y_true), axis=-1))
+
+
+def bytes_size(y_true, y_pred, rescale=255):
+    """
+    Save predicted image to disk to get file size, helping to minimise output file size
+    :param y_true: Ground truth
+    :param y_pred: Predicted image
+    :return: Size of predicted image size (bytes)
+    """
+    s_dir = os.getcwd()
+    tmp = tempfile.mkdtemp(dir=s_dir)
+    os.chdir(tmp)
+    # y_pred *= rescale
+    # im = Image.fromarray(y_pred, mode=img_mode)
+    im = array_to_img(y_pred)
+    im.save("test.png")
+    size = os.stat("test.png").st_size
+    os.chdir(s_dir)
+    shutil.rmtree(tmp)
+    return size
