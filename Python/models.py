@@ -67,8 +67,8 @@ class ModelClass:
         history = model.fit(
             x_train,
             y_train,
-            epochs=200,
-            batch_size=8,
+            epochs=1000,
+            batch_size=4,
             validation_data=(x_val, y_val),
             shuffle=True,
             verbose=2,
@@ -278,6 +278,7 @@ class Attempt2(ModelClass):
         x = ZeroPadding2D(padding=(1, 3))(
             x
         )  # (x+(1*2), y+(9*2), z) -> (1022, 1534, 128)
+        # TODO - Upscale more
         upscale_decode = Conv2DTranspose(
             filters=32,
             kernel_size=3,
