@@ -2,6 +2,7 @@
 File for all models, to be used by main.py
 """
 import datetime
+from keras import backend as K
 from timeit import default_timer as timer
 from keras import Model, Input
 from keras.layers import (
@@ -26,6 +27,10 @@ class ModelClass:
     @staticmethod
     def input_layer(dims):
         return Input(shape=dims, name="input")
+
+    @staticmethod
+    def set_precision(precision="float32"):
+        K.set_floatx(precision)
 
     @staticmethod
     def ready_training(compressed_images, original_images, split=0.2, state=42):
