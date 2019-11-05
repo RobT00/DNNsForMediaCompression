@@ -13,6 +13,7 @@ from keras.layers import (
     UpSampling2D,
     ZeroPadding2D,
     GaussianDropout,
+    Cropping2D,
 )
 from keras import regularizers
 from sklearn.model_selection import train_test_split
@@ -67,7 +68,7 @@ class ModelClass:
         history = model.fit(
             x_train,
             y_train,
-            epochs=1000,
+            epochs=700,
             batch_size=4,
             validation_data=(x_val, y_val),
             shuffle=True,
@@ -542,6 +543,121 @@ class Attempt3(ModelClass):
         #     x
         # )  # ((x-2)/1, (y-2)/1, z) -> (512, 768, 3) [768 / 512 = 1.5]
         # # model.add(Reshape((512, 768, 3)))
+
+        model = Model(self.input, decode)
+
+        model.name = self.name
+
+        return model
+
+
+class Attempt4(ModelClass):
+    """
+    Model class for autoencoder attempt - fully symmetric, using only centred kernel (i.e. 3x3, 5x5);
+    Upscale once (2x), then encode to latent space
+    Decode to (2x) then convolve to output image
+    """
+
+    def __init__(self, dims):
+        super().__init__(dims)
+        self.name = "Attempt4"
+
+    def build(self):
+        x = Conv2DTranspose(
+            filters=3,
+            kernel_size=3,
+            strides=(2, 2),
+            padding="same",
+            name="input_upscale_1",
+        )(
+            self.input
+        )  # (1024, 1536, 3)
+        x = Conv2D(
+            filters=8,
+            kernel_size=3,
+            strides=(2, 2),
+            padding="same",
+            name="input_encode_1",
+        )(
+            x
+        )  # (512, 768, 8)
+        x = Conv2D(
+            filters=16,
+            kernel_size=5,
+            strides=(2, 2),
+            padding="valid",
+            name="input_encode_2",
+        )(
+            x
+        )  # (254, 382, 16)
+        x = MaxPooling2D(pool_size=(2, 2))(x)  # (127, 191, 16)
+        x = Conv2D(
+            filters=32,
+            kernel_size=3,
+            strides=(2, 2),
+            padding="same",
+            name="input_encode_3",
+        )(
+            x
+        )  # (64, 96, 32)
+        # x = ZeroPadding2D(padding=(1, 0))(x)  # (66, 96, 32)
+        encode = Conv2D(
+            filters=64, kernel_size=3, padding="valid", name="input_encode_4"
+        )(
+            x
+        )  # (62, 94, 64)
+
+        x = Conv2DTranspose(
+            filters=48, kernel_size=3, padding="same", name="output_decode_1"
+        )(
+            encode
+        )  # (62, 94, 48)
+        x = ZeroPadding2D(padding=(1, 1))(x)
+        # x = UpSampling2D(size=(2, 2))(x)  # (128, 188, 48)
+        # x = Conv2DTranspose(filters=32, kernel_size=3, strides=(2, 2), padding="valid", output_padding=1,
+        # dilation_rate=2, name="output_decode_2")(x)  # (260, 380, 32)
+        x = Conv2DTranspose(
+            filters=32,
+            kernel_size=3,
+            strides=(2, 2),
+            padding="same",
+            name="output_decode_2",
+        )(
+            x
+        )  # (124, 188, 32)
+        x = UpSampling2D(size=(2, 2))(x)  # (248, 376, 32)
+        # x = Conv2DTranspose(filters=16, kernel_size=5, strides=(2, 2), padding="valid", output_padding=1,
+        # dilation_rate=2, name="output_decode_3")(x)  # (509, 765, 16)
+        x = Conv2DTranspose(
+            filters=16,
+            kernel_size=5,
+            strides=(2, 2),
+            padding="valid",
+            name="output_decode_3",
+        )(
+            x
+        )  # (504, 760, 16)
+        x = Conv2DTranspose(
+            filters=8,
+            kernel_size=3,
+            strides=(2, 2),
+            padding="same",
+            name="output_upscale_1",
+        )(
+            x
+        )  # (1008, 1520, 8)
+        x = Cropping2D(cropping=((2, 2), (2, 2)))(x)
+        decode = Conv2D(
+            filters=3,
+            kernel_size=3,
+            strides=(2, 2),
+            padding="valid",
+            name="output_decode_4",
+        )(
+            x
+        )  # (512, 768, 3)
+        # x = Cropping2D(cropping=((2, 1), (2, 1)))(x)
+        # decode = Conv2D(filters=3, kernel_size=3, padding="valid", name="output_decode_5")(x)
 
         model = Model(self.input, decode)
 

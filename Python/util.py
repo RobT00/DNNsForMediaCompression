@@ -3,6 +3,7 @@ File containing utility functions
 """
 import os
 import sys
+from keras.models import load_model, Model
 from keras_preprocessing.image import load_img, img_to_array, save_img
 from keras_applications.imagenet_utils import preprocess_input
 import matplotlib.pyplot as plt
@@ -24,19 +25,26 @@ class DataManagement:
         self.out_path = o_dir
 
     def preprocess_image(
-        self, image_path, data_format="channels_first", mode="tf", plot=False, **dims
+        self,
+        image_path,
+        precision,
+        data_format="channels_first",
+        mode="tf",
+        plot=False,
+        **dims,
     ):
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param image_path: Path to image
         :param data_format: Format to process image
         :param mode: Mode to process image
+        :param precision: Precision for ndarray
         :param plot: Boolean - to plot image
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
         :return: Processed image
         """
         img = load_img(image_path)
-        img = img_to_array(img)
+        img = img_to_array(img, dtype=precision)
         # img = check_dims(
         #     img,
         #     height=dims.get("height", img.shape[0]),
@@ -44,10 +52,10 @@ class DataManagement:
         #     channels=dims.get("channels", img.shape[2]),
         # )
         img = self.check_dims(img, dims.get("dims", img.shape))
-        if mode != "div":
-            img = preprocess_input(img, data_format=data_format, mode=mode)
-        else:
+        if mode == "div":
             img /= 255.0
+        else:
+            img = preprocess_input(img, data_format=data_format, mode=mode)
         if plot:
             plt.figure()
             plt.imshow(img)
@@ -126,14 +134,17 @@ class DataManagement:
 
         return img
 
-    def get_training_images(self):
-        compressed_images = list()
+    def get_training_images(self, precision="float32", img_format="jpg"):
+        compressed_images = dict()
         for compression_level in os.listdir(self.compressed_images_path):
             for filename in glob.glob(
-                os.path.join(self.compressed_images_path, compression_level) + "/*.jpg"
+                # fmt: off
+                os.path.join(self.compressed_images_path,
+                             compression_level) + f"/*.{img_format}"
+                # fmt: on
             ):
                 img = self.preprocess_image(
-                    filename, mode="div", plot=False, **self.input_dims
+                    filename, precision, mode="div", plot=False, **self.input_dims
                 )
                 if not self.input_dims:
                     # dims.update(
@@ -142,7 +153,7 @@ class DataManagement:
                     self.input_dims.update({"dims": img.shape})
                 # if any(c in filename for c in TO_COMPARE):
                 #     compare_dict.setdefault("compressed", dict()).setdefault(compression_level, list()).append(img)
-                compressed_images.append(img)
+                compressed_images.setdefault(compression_level, list()).append(img)
                 # im = Image.open(filename)
                 # im.load()
                 # plt.figure()
@@ -161,15 +172,21 @@ class DataManagement:
                 # plt.show()
                 # test_list.append(img)
 
-        compressed_images = np.asarray(compressed_images, dtype=float)
+        compressed_images_array = list()
+        for i in compressed_images.values():
+            compressed_images_array.extend(i)
 
-        return compressed_images
+        compressed_images_array = np.asarray(compressed_images_array, dtype=precision)
 
-    def get_label_images(self, num_compressed_images):
+        return compressed_images, compressed_images_array
+
+    def get_label_images(
+        self, num_compressed_images, precision="float32", img_format="png"
+    ):
         original_images = list()
-        for filename in glob.glob(self.original_images_path + "/*.png"):
+        for filename in glob.glob(self.original_images_path + f"/*.{img_format}"):
             img = self.preprocess_image(
-                filename, mode="div", plot=False, **self.input_dims
+                filename, precision, mode="div", plot=False, **self.input_dims
             )
             if not self.input_dims:
                 # dims.update(
@@ -183,7 +200,7 @@ class DataManagement:
 
         n = num_compressed_images // len(original_images)
         original_images *= n
-        original_images = np.asarray(original_images, dtype=float)
+        original_images = np.asarray(original_images, dtype=precision)
 
         return original_images
 
@@ -207,105 +224,110 @@ class DataManagement:
 
         return index + dest_path
 
-    def output_results(self, model, training_data, train_x, train_y, val_x, val_y):
+    def output_results(self, model, input_images, labels, training_data=None):
+        f_name = ""
         return_dir = os.getcwd()
         self.out_path = os.path.join(self.out_path, model.name)
-        # Create folder name based on params
-        f_name = "optimiser={} epochs={} batch_size={}".format(
-            training_data.model.optimizer.iterations.name.split("/")[0],
-            training_data.params["epochs"],
-            training_data.params["batch_size"],
-        )
-
-        # Create plots to save training records
-        fig_1 = plt.figure()
-        plt.plot(training_data.history["loss"], label="PSNR Training Loss")
-        plt.plot(training_data.history["val_loss"], label="PSNR Validation Loss")
-        plt.xlabel("Epochs")
-        plt.ylabel("Score")
-        plt.legend()
-        plt.title(f_name)
-        # plt.show()
-
-        fig_2 = plt.figure()
-        plt.plot(training_data.history["mse"], label="MSE Training Loss")
-        plt.plot(training_data.history["val_mse"], label="MSE Validation Loss")
-        plt.xlabel("Epochs")
-        plt.ylabel("Score")
-        plt.legend()
-        plt.title(f_name)
-        # plt.show()
-
-        # plt.figure()
-        # plt.plot(history.history['loss'], label="MSE Training Loss")
-        # plt.plot(history.history['val_loss'], label="MSE Validation Loss")
-        # plt.plot(history.history['rmse'], label="RMSE Training Loss")
-        # plt.plot(history.history['val_rmse'], label="RMSE Validation Loss")
-        # plt.xlabel("Epochs")
-        # plt.ylabel("Score")
-        # plt.legend()
-        # plt.show()
-        #
-        # plt.figure()
-        # plt.plot(history.history['tf_psnr'], label="PSNR Training Loss")
-        # plt.plot(history.history['val_tf_psnr'], label="PSNR Validation Loss")
-        # plt.xlabel("Epochs")
-        # plt.ylabel("Score")
-        # plt.legend()
-        # plt.show()
-
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
+        if training_data:
+            # Create folder name based on params
+            f_name += "optimiser={} epochs={} batch_size={}".format(
+                training_data.model.optimizer.iterations.name.split("/")[0],
+                training_data.params["epochs"],
+                training_data.params["batch_size"],
+            )
 
-        f_name += " metrics={} model={}".format(
-            ",".join(training_data.params["metrics"]), model.name
-        )
+            # Create plots to save training records
+            fig_1 = plt.figure()
+            plt.plot(training_data.history["loss"], label="PSNR Training Loss")
+            plt.plot(training_data.history["val_loss"], label="PSNR Validation Loss")
+            plt.xlabel("Epochs")
+            plt.ylabel("Score")
+            plt.legend()
+            plt.title(f_name)
+            # plt.show()
 
-        out_path = self.unique_file(os.path.join(self.out_path, f_name))
+            fig_2 = plt.figure()
+            plt.plot(training_data.history["mse"], label="MSE Training Loss")
+            plt.plot(training_data.history["val_mse"], label="MSE Validation Loss")
+            plt.xlabel("Epochs")
+            plt.ylabel("Score")
+            plt.legend()
+            plt.title(f_name)
+            # plt.show()
+
+            # plt.figure()
+            # plt.plot(history.history['loss'], label="MSE Training Loss")
+            # plt.plot(history.history['val_loss'], label="MSE Validation Loss")
+            # plt.plot(history.history['rmse'], label="RMSE Training Loss")
+            # plt.plot(history.history['val_rmse'], label="RMSE Validation Loss")
+            # plt.xlabel("Epochs")
+            # plt.ylabel("Score")
+            # plt.legend()
+            # plt.show()
+            #
+            # plt.figure()
+            # plt.plot(history.history['tf_psnr'], label="PSNR Training Loss")
+            # plt.plot(history.history['val_tf_psnr'], label="PSNR Validation Loss")
+            # plt.xlabel("Epochs")
+            # plt.ylabel("Score")
+            # plt.legend()
+            # plt.show()
+
+            f_name += " metrics={} model={}".format(
+                ",".join(training_data.params["metrics"]), model.name
+            )
+
+            out_path = self.unique_file(os.path.join(self.out_path, f_name))
+
+            # Save generated plots
+            p_dir = os.path.join(out_path, "Plots")
+            os.makedirs(p_dir)
+            os.chdir(p_dir)
+
+            fig_1.savefig("PSNR.png")
+            fig_2.savefig("RMSE.png")
+
+            # Save model
+            m_dir = os.path.join(out_path, "Model")
+            os.makedirs(m_dir)
+            os.chdir(m_dir)
+
+            model.save("{}.h5".format(model.name))
+        else:
+            f_name += "loaded_model={}".format(model.name)
+            out_path = self.unique_file(os.path.join(self.out_path, f_name))
 
         # Save sample training and validation images
-        t_dir = os.path.join(out_path, "Training")
-        os.makedirs(t_dir)
-        os.chdir(t_dir)
+        for i, (t_im, o_im) in enumerate(zip(input_images, labels)):
+            t_dir = os.path.join(out_path, "Training", str(i))
+            os.makedirs(t_dir)
+            os.chdir(t_dir)
 
-        train_im = np.expand_dims(train_x, axis=0)
-        train_pred = model.predict(train_im)
-        # im = deprocess_image(np.squeeze(a), plot=True)
-        save_img(
-            "original.png",
-            self.deprocess_image(np.expand_dims(train_y, axis=0), plot=False),
-        )
-        save_img("compressed.png", self.deprocess_image(train_im, plot=False))
-        save_img("trained.png", self.deprocess_image(train_pred, plot=False))
+            train_im = np.expand_dims(t_im, axis=0)
+            train_pred = model.predict(train_im)
+            # im = deprocess_image(np.squeeze(a), plot=True)
+            save_img(
+                "original.png",
+                self.deprocess_image(np.expand_dims(o_im, axis=0), plot=False),
+            )
+            save_img("compressed.png", self.deprocess_image(train_im, plot=False))
+            save_img("trained.png", self.deprocess_image(train_pred, plot=False))
 
-        v_dir = os.path.join(out_path, "Validation")
-        os.makedirs(v_dir)
-        os.chdir(v_dir)
-
-        val_im = np.expand_dims(val_x, axis=0)
-        val_pred = model.predict(val_im)
-        # im = deprocess_image(np.squeeze(a), plot=True)
-        save_img(
-            "original.png",
-            self.deprocess_image(np.expand_dims(val_y, axis=0), plot=False),
-        )
-        save_img("compressed.png", self.deprocess_image(val_im, plot=False))
-        save_img("trained.png", self.deprocess_image(val_pred, plot=False))
-
-        # Save generated plots
-        p_dir = os.path.join(out_path, "Plots")
-        os.makedirs(p_dir)
-        os.chdir(p_dir)
-
-        fig_1.savefig("PSNR.png")
-        fig_2.savefig("RMSE.png")
-
-        # Save model
-        m_dir = os.path.join(out_path, "Model")
-        os.makedirs(m_dir)
-        os.chdir(m_dir)
-
-        model.save("{}.h5".format(model.name))
+            # v_dir = os.path.join(out_path, "Validation")
+            # os.makedirs(v_dir)
+            # os.chdir(v_dir)
+            #
+            # val_im = np.expand_dims(val_x, axis=0)
+            # val_pred = model.predict(val_im)
+            # # im = deprocess_image(np.squeeze(a), plot=True)
+            # save_img(
+            #     "original.png",
+            #     self.deprocess_image(np.expand_dims(val_y, axis=0), plot=False),
+            # )
+            # save_img("compressed.png", self.deprocess_image(val_im, plot=False))
+            # save_img("trained.png", self.deprocess_image(val_pred, plot=False))
 
         # os.chdir(self.script_dir)
         os.chdir(return_dir)
@@ -313,3 +335,11 @@ class DataManagement:
     @staticmethod
     def get_model_from_string(classname):
         return getattr(sys.modules[__name__].models, classname)
+
+    @staticmethod
+    def load_model_from_path(model_path):
+        return load_model(model_path, compile=False)
+
+    @staticmethod
+    def loaded_model(model):
+        return type(model) == Model
