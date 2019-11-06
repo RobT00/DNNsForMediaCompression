@@ -16,9 +16,6 @@ class DataManagement:
     def __init__(self, script_dir, c_images, o_images, o_dir):
         self.compare_dict = dict()
         self.input_dims = dict()
-        # TODO - Do these lists need to be class variables ?
-        # self.original_images = list()
-        # self.compressed_images = list()
         self.script_dir = script_dir
         self.compressed_images_path = c_images
         self.original_images_path = o_images
@@ -230,6 +227,7 @@ class DataManagement:
         self.out_path = os.path.join(self.out_path, model.name)
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
+        os.chdir(self.out_path)
         if training_data:
             # Create folder name based on params
             f_name += "optimiser={} epochs={} batch_size={}".format(
@@ -279,7 +277,8 @@ class DataManagement:
                 ",".join(training_data.params["metrics"]), model.name
             )
 
-            out_path = self.unique_file(os.path.join(self.out_path, f_name))
+            # out_path = self.unique_file(os.path.join(self.out_path, f_name))
+            out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
             # Save generated plots
             p_dir = os.path.join(out_path, "Plots")
@@ -297,40 +296,50 @@ class DataManagement:
             model.save("{}.h5".format(model.name))
         else:
             f_name += "loaded_model={}".format(model.name)
-            out_path = self.unique_file(os.path.join(self.out_path, f_name))
+            # out_path = self.unique_file(os.path.join(self.out_path, f_name))
+            out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
-        for i, (t_im, o_im) in enumerate(zip(input_images, labels)):
-            t_dir = os.path.join(out_path, "Training", str(i))
-            os.makedirs(t_dir)
-            os.chdir(t_dir)
-
-            train_im = np.expand_dims(t_im, axis=0)
-            train_pred = model.predict(train_im)
-            # im = deprocess_image(np.squeeze(a), plot=True)
-            save_img(
-                "original.png",
-                self.deprocess_image(np.expand_dims(o_im, axis=0), plot=False),
-            )
-            save_img("compressed.png", self.deprocess_image(train_im, plot=False))
-            save_img("trained.png", self.deprocess_image(train_pred, plot=False))
-
-            # v_dir = os.path.join(out_path, "Validation")
-            # os.makedirs(v_dir)
-            # os.chdir(v_dir)
-            #
-            # val_im = np.expand_dims(val_x, axis=0)
-            # val_pred = model.predict(val_im)
-            # # im = deprocess_image(np.squeeze(a), plot=True)
-            # save_img(
-            #     "original.png",
-            #     self.deprocess_image(np.expand_dims(val_y, axis=0), plot=False),
-            # )
-            # save_img("compressed.png", self.deprocess_image(val_im, plot=False))
-            # save_img("trained.png", self.deprocess_image(val_pred, plot=False))
+        t_dir = os.path.join(out_path, "Training")
+        if type(input_images) is dict:
+            for compression_level, images in input_images.items():
+                for i, (t_im, o_im) in enumerate(zip(images, labels)):
+                    self.output_helper_images(
+                        t_dir,
+                        t_im,
+                        o_im,
+                        model,
+                        output_append=[str(compression_level), str(i)],
+                    )
+        else:
+            for i, (t_im, o_im) in enumerate(zip(input_images, labels)):
+                self.output_helper_images(
+                    t_dir, t_im, o_im, model, output_append=str(i)
+                )
 
         # os.chdir(self.script_dir)
         os.chdir(return_dir)
+
+    def output_helper_images(
+        self, output_directory, input_image, original_image, model, output_append=None
+    ):
+        if type(output_append) is list:
+            for appendage in output_append:
+                output_directory = os.path.join(output_directory, appendage)
+        elif output_append:
+            output_directory = os.path.join(output_directory, output_append)
+
+        os.makedirs(output_directory)
+        os.chdir(output_directory)
+
+        train_im = np.expand_dims(input_image, axis=0)
+        train_pred = model.predict(train_im)
+        save_img(
+            "original.png",
+            self.deprocess_image(np.expand_dims(original_image, axis=0), plot=False),
+        )
+        save_img("compressed.png", self.deprocess_image(train_im, plot=False))
+        save_img("trained.png", self.deprocess_image(train_pred, plot=False))
 
     @staticmethod
     def get_model_from_string(classname):

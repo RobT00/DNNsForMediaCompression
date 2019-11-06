@@ -21,7 +21,8 @@ from sklearn.model_selection import train_test_split
 
 
 class ModelClass:
-    def __init__(self, dims):
+    def __init__(self, dims, precision="float32"):
+        self.set_precision(precision)
         self.input = self.input_layer(dims)
 
     @staticmethod
@@ -88,8 +89,10 @@ class ModelClass:
 
 
 class Attempt1(ModelClass):
-    def __init__(self, dims):
-        super().__init__(dims)  # Is equivalent to super(Attempt1, self).__init__(dims)
+    def __init__(self, dims, precision="float32"):
+        super().__init__(
+            dims, precision
+        )  # Is equivalent to super(Attempt1, self).__init__(dims)
         self.name = "Attempt1"
 
     def build(self):
@@ -138,8 +141,10 @@ class Attempt2(ModelClass):
     Model seems too large current, cannot allocate layer (2048, 3072, 69)
     """
 
-    def __init__(self, dims):
-        super().__init__(dims)  # Is equivalent to super(Attempt2, self).__init__(dims)
+    def __init__(self, dims, precision="float32"):
+        super().__init__(
+            dims, precision
+        )  # Is equivalent to super(Attempt2, self).__init__(dims)
         self.name = "Attempt2"
 
     def build(self):
@@ -340,8 +345,10 @@ class Attempt3(ModelClass):
     Model seems too large current, cannot allocate layer (2048, 3072, 69)
     """
 
-    def __init__(self, dims):
-        super().__init__(dims)  # Is equivalent to super(Attempt3, self).__init__(dims)
+    def __init__(self, dims, precision="float32"):
+        super().__init__(
+            dims, precision
+        )  # Is equivalent to super(Attempt3, self).__init__(dims)
         self.name = "Attempt3"
 
     def build(self):
@@ -563,8 +570,8 @@ class Attempt4(ModelClass):
     Decode to (2x) then convolve to output image
     """
 
-    def __init__(self, dims):
-        super().__init__(dims)
+    def __init__(self, dims, precision="float32"):
+        super().__init__(dims, precision)
         self.name = "Attempt4"
 
     def build(self):
@@ -672,8 +679,10 @@ class Attempt4(ModelClass):
 
 
 class KerasAE(ModelClass):
-    def __init__(self, dims):
-        super().__init__(dims)  # Is equivalent to super(KerasAE, self).__init__(dims)
+    def __init__(self, dims, precision="float32"):
+        super().__init__(
+            dims, precision
+        )  # Is equivalent to super(KerasAE, self).__init__(dims)
         self.name = "Keras CNN AE"
 
     def build(self):
@@ -700,9 +709,9 @@ class KerasAE(ModelClass):
 
 
 class KerasDenoise(ModelClass):
-    def __init__(self, dims):
+    def __init__(self, dims, precision="float32"):
         super().__init__(
-            dims
+            dims, precision
         )  # Is equivalent to super(KerasDenoise, self).__init__(dims)
         self.name = "Keras Denoise AE"
 
