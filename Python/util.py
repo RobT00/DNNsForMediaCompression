@@ -3,12 +3,14 @@ File containing utility functions
 """
 import os
 import sys
+from datetime import timedelta
 from keras.models import load_model, Model
 from keras_preprocessing.image import load_img, img_to_array, save_img
 from keras_applications.imagenet_utils import preprocess_input
 import matplotlib.pyplot as plt
 import numpy as np
 import glob
+from timeit import default_timer as timer  # Measured in seconds
 from Python import models
 
 
@@ -26,7 +28,7 @@ class DataManagement:
         image_path,
         precision,
         data_format="channels_first",
-        mode="tf",
+        mode="div",
         plot=False,
         **dims,
     ):
@@ -55,7 +57,7 @@ class DataManagement:
             img = preprocess_input(img, data_format=data_format, mode=mode)
         if plot:
             plt.figure()
-            plt.imshow(img)
+            plt.imshow(img.astype(float))
             plt.show()
 
         return img
@@ -121,7 +123,10 @@ class DataManagement:
         if img.shape[3] != 3:
             raise ValueError("Not RGB")
         img = img.reshape((img.shape[1], img.shape[2], img.shape[3]))
-        img *= 255.0
+        try:
+            img *= 255.0
+        except RuntimeWarning:
+            pass
         img = np.clip(img, 0, 255).astype("uint8")
 
         if plot:
@@ -131,7 +136,7 @@ class DataManagement:
 
         return img
 
-    def get_training_images(self, precision="float32", img_format="jpg"):
+    def get_training_images(self, precision="float32", img_format="jpg", plot=False):
         compressed_images = dict()
         for compression_level in os.listdir(self.compressed_images_path):
             for filename in glob.glob(
@@ -141,7 +146,7 @@ class DataManagement:
                 # fmt: on
             ):
                 img = self.preprocess_image(
-                    filename, precision, mode="div", plot=False, **self.input_dims
+                    filename, precision, mode="div", plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
                     # dims.update(
@@ -178,12 +183,12 @@ class DataManagement:
         return compressed_images, compressed_images_array
 
     def get_label_images(
-        self, num_compressed_images, precision="float32", img_format="png"
+        self, num_compressed_images, precision="float32", img_format="png", plot=False
     ):
         original_images = list()
         for filename in glob.glob(self.original_images_path + f"/*.{img_format}"):
             img = self.preprocess_image(
-                filename, precision, mode="div", plot=False, **self.input_dims
+                filename, precision, mode="div", plot=plot, **self.input_dims
             )
             if not self.input_dims:
                 # dims.update(
@@ -221,7 +226,9 @@ class DataManagement:
 
         return index + dest_path
 
-    def output_results(self, model, input_images, labels, training_data=None):
+    def output_results(
+        self, model, input_images, labels, training_data=None, precision="float32"
+    ):
         f_name = ""
         return_dir = os.getcwd()
         self.out_path = os.path.join(self.out_path, model.name)
@@ -273,8 +280,8 @@ class DataManagement:
             # plt.legend()
             # plt.show()
 
-            f_name += " metrics={} model={}".format(
-                ",".join(training_data.params["metrics"]), model.name
+            f_name += " metrics={} model={} precision={}".format(
+                ",".join(training_data.params["metrics"]), model.name, precision
             )
 
             # out_path = self.unique_file(os.path.join(self.out_path, f_name))
@@ -295,33 +302,51 @@ class DataManagement:
 
             model.save("{}.h5".format(model.name))
         else:
-            f_name += "loaded_model={}".format(model.name)
+            f_name += "loaded_model={} precision={}".format(model.name, precision)
             # out_path = self.unique_file(os.path.join(self.out_path, f_name))
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
         t_dir = os.path.join(out_path, "Training")
+        output_time = 0.0
+        i = 0  # So that i will always be defined
+        num_images = 0
         if type(input_images) is dict:
             for compression_level, images in input_images.items():
-                for i, (t_im, o_im) in enumerate(zip(images, labels)):
-                    self.output_helper_images(
+                for i, (t_im, o_im) in enumerate(
+                    # TODO - stop black adding whitespace after ':'
+                    # fmt: off
+                    zip(images, labels[num_images: len(images) + num_images]), start=1
+                    # fmt: on
+                ):
+                    output_time += self.output_helper_images(
                         t_dir,
                         t_im,
                         o_im,
                         model,
                         output_append=[str(compression_level), str(i)],
                     )
+                num_images += i
         else:
-            for i, (t_im, o_im) in enumerate(zip(input_images, labels)):
-                self.output_helper_images(
+            for i, (t_im, o_im) in enumerate(zip(input_images, labels), start=1):
+                output_time += self.output_helper_images(
                     t_dir, t_im, o_im, model, output_append=str(i)
                 )
+            num_images += i
 
         # os.chdir(self.script_dir)
         os.chdir(return_dir)
 
+        return timedelta(milliseconds=output_time / num_images)
+
     def output_helper_images(
-        self, output_directory, input_image, original_image, model, output_append=None
+        self,
+        output_directory,
+        input_image,
+        original_image,
+        model,
+        output_append=None,
+        plot=False,
     ):
         if type(output_append) is list:
             for appendage in output_append:
@@ -333,13 +358,17 @@ class DataManagement:
         os.chdir(output_directory)
 
         train_im = np.expand_dims(input_image, axis=0)
+        start = timer()
         train_pred = model.predict(train_im)
+        end = timer()
         save_img(
             "original.png",
-            self.deprocess_image(np.expand_dims(original_image, axis=0), plot=False),
+            self.deprocess_image(np.expand_dims(original_image, axis=0), plot=True),
         )
-        save_img("compressed.png", self.deprocess_image(train_im, plot=False))
-        save_img("trained.png", self.deprocess_image(train_pred, plot=False))
+        save_img("compressed.png", self.deprocess_image(train_im, plot=plot))
+        save_img("trained.png", self.deprocess_image(train_pred, plot=plot))
+
+        return (end - start) * 1000
 
     @staticmethod
     def get_model_from_string(classname):
