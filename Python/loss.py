@@ -49,6 +49,28 @@ def tf_psnr(y_true, y_pred, max_val=1.0):
     return -(tf.image.psnr(y_pred, y_true, max_val))
 
 
+def tf_ssim(y_true, y_pred, max_val=1.0):
+    """
+    Tensorflow implementation of Structural Similarity
+    :param y_true: Ground Truth
+    :param y_pred: Predicted label
+    :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
+    :return: SSIM, result is negated in order to minimise loss (maximise SSIM)
+    """
+    return -(tf.image.ssim(y_pred, y_true, max_val))
+
+
+def tf_ms_ssim(y_true, y_pred, max_val=1.0):
+    """
+    Tensorflow implementation of Multi-Scale Structural Similarity
+    :param y_true: Ground Truth
+    :param y_pred: Predicted label
+    :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
+    :return: MS-SSIM, result is negated in order to minimise loss (maximise MS-SIM)
+    """
+    return -(tf.image.ssim_multiscale(y_pred, y_true, max_val))
+
+
 def psnr_loss(y_true, y_pred):
     """
     PSNR is Peek Signal to Noise Ratio, which is similar to mean squared error.
