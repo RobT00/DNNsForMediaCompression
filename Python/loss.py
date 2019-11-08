@@ -46,7 +46,7 @@ def tf_psnr(y_true, y_pred, max_val=1.0):
     :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
     :return: PSNR, result is negated in order to minimise loss (maximise PSNR)
     """
-    return -(tf.image.psnr(y_pred, y_true, max_val))
+    return -(tf.dtypes.cast(tf.image.psnr(y_pred, y_true, max_val), dtype=K.floatx()))
 
 
 def tf_ssim(y_true, y_pred, max_val=1.0):
@@ -57,7 +57,7 @@ def tf_ssim(y_true, y_pred, max_val=1.0):
     :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
     :return: SSIM, result is negated in order to minimise loss (maximise SSIM)
     """
-    return -(tf.image.ssim(y_pred, y_true, max_val))
+    return -(tf.dtypes.cast(tf.image.ssim(y_pred, y_true, max_val), dtype=K.floatx()))
 
 
 def tf_ms_ssim(y_true, y_pred, max_val=1.0):
@@ -68,7 +68,11 @@ def tf_ms_ssim(y_true, y_pred, max_val=1.0):
     :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
     :return: MS-SSIM, result is negated in order to minimise loss (maximise MS-SIM)
     """
-    return -(tf.image.ssim_multiscale(y_pred, y_true, max_val))
+    return -(
+        tf.dtypes.cast(
+            tf.image.ssim_multiscale(y_pred, y_true, max_val), dtype=K.floatx()
+        )
+    )
 
 
 def psnr_loss(y_true, y_pred):

@@ -239,7 +239,8 @@ class DataManagement:
             # Create folder name based on params
             f_name += "optimiser={} epochs={} batch_size={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
-                training_data.params["epochs"],
+                # training_data.params["epochs"],
+                len(training_data.epoch),
                 training_data.params["batch_size"],
             )
 
@@ -281,7 +282,15 @@ class DataManagement:
             # plt.show()
 
             f_name += " metrics={} model={} precision={}".format(
-                ",".join(training_data.params["metrics"]), model.name, precision
+                ",".join(
+                    [
+                        i
+                        for i in training_data.params["metrics"]
+                        if i != "loss" and i[:4] != "val_"
+                    ]
+                ),
+                model.name,
+                precision,
             )
 
             # out_path = self.unique_file(os.path.join(self.out_path, f_name))
@@ -363,7 +372,7 @@ class DataManagement:
         end = timer()
         save_img(
             "original.png",
-            self.deprocess_image(np.expand_dims(original_image, axis=0), plot=True),
+            self.deprocess_image(np.expand_dims(original_image, axis=0), plot=plot),
         )
         save_img("compressed.png", self.deprocess_image(train_im, plot=plot))
         save_img("trained.png", self.deprocess_image(train_pred, plot=plot))

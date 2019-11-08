@@ -69,16 +69,14 @@ class ModelClass:
     ):
         if x_train is None or x_val is None or y_train is None or y_val is None:
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
-        cb = [
-            EarlyStopping(verbose=True, patience=5, monitor="val_tf_psnr", mode="min")
-        ]
+        cb = [EarlyStopping(verbose=True, patience=10, monitor="val_loss", mode="min")]
         print("Training")
         start = timer()
 
         history = model.fit(
             x_train,
             y_train,
-            epochs=700,
+            epochs=500,
             batch_size=4,
             validation_data=(x_val, y_val),
             shuffle=True,
