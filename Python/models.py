@@ -17,6 +17,7 @@ from keras.layers import (
     Cropping2D,
 )
 from keras import regularizers
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.model_selection import train_test_split
 
 
@@ -68,6 +69,9 @@ class ModelClass:
     ):
         if x_train is None or x_val is None or y_train is None or y_val is None:
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
+        cb = [
+            EarlyStopping(verbose=True, patience=5, monitor="val_tf_psnr", mode="min")
+        ]
         print("Training")
         start = timer()
 
@@ -79,6 +83,7 @@ class ModelClass:
             validation_data=(x_val, y_val),
             shuffle=True,
             verbose=2,
+            callbacks=cb,
         )
 
         end = timer()
