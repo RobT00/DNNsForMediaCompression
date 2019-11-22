@@ -59,8 +59,8 @@ class ModelClass:
     def train(
         self,
         model,
-        train,
-        label,
+        train=None,
+        label=None,
         x_train=None,
         x_val=None,
         y_train=None,

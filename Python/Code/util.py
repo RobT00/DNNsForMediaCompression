@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 from timeit import default_timer as timer  # Measured in seconds
-from Python import models
 
 
 class DataManagement:
