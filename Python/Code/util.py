@@ -3,6 +3,7 @@ File containing utility functions
 """
 import os
 import sys
+import models
 from datetime import timedelta
 from keras.models import load_model, Model
 from keras_preprocessing.image import load_img, img_to_array, save_img
@@ -226,7 +227,13 @@ class DataManagement:
         return index + dest_path
 
     def output_results(
-        self, model, input_images, labels, training_data=None, precision="float32"
+        self,
+        model,
+        input_images,
+        labels,
+        training_data=None,
+        precision="float32",
+        loss_fn="MS-SSIM",
     ):
         f_name = ""
         return_dir = os.getcwd()
@@ -245,8 +252,10 @@ class DataManagement:
 
             # Create plots to save training records
             fig_1 = plt.figure()
-            plt.plot(training_data.history["loss"], label="PSNR Training Loss")
-            plt.plot(training_data.history["val_loss"], label="PSNR Validation Loss")
+            plt.plot(training_data.history["loss"], label=f"{loss_fn} Training Loss")
+            plt.plot(
+                training_data.history["val_loss"], label=f"{loss_fn} Validation Loss"
+            )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
@@ -254,8 +263,8 @@ class DataManagement:
             # plt.show()
 
             fig_2 = plt.figure()
-            plt.plot(training_data.history["mse"], label="MSE Training Loss")
-            plt.plot(training_data.history["val_mse"], label="MSE Validation Loss")
+            plt.plot(training_data.history["tf_psnr"], label="PSNR Training Loss")
+            plt.plot(training_data.history["val_tf_psnr"], label="PSNR Validation Loss")
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
@@ -300,8 +309,8 @@ class DataManagement:
             os.makedirs(p_dir)
             os.chdir(p_dir)
 
-            fig_1.savefig("PSNR.png")
-            fig_2.savefig("RMSE.png")
+            fig_1.savefig(f"{loss_fn}.png")
+            fig_2.savefig("PSNR.png")
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
