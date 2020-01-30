@@ -86,6 +86,8 @@ class ModelClass:
             callbacks=cb,
         )
 
+        model.fit_generator()
+
         end = timer()
         dur = end - start
         print("Training took: {}".format(str(datetime.timedelta(seconds=dur))))

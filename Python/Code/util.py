@@ -6,7 +6,12 @@ import sys
 import models
 from datetime import timedelta
 from keras.models import load_model, Model
-from keras_preprocessing.image import load_img, img_to_array, save_img
+from keras_preprocessing.image import (
+    load_img,
+    img_to_array,
+    save_img,
+    ImageDataGenerator,
+)
 from keras_applications.imagenet_utils import preprocess_input
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,13 +20,17 @@ from timeit import default_timer as timer  # Measured in seconds
 
 
 class DataManagement:
-    def __init__(self, script_dir, c_images, o_images, o_dir):
+    def __init__(self, script_dir, c_images, o_images, o_dir, precision):
         self.compare_dict = dict()
         self.input_dims = dict()
         self.script_dir = script_dir
         self.compressed_images_path = c_images
         self.original_images_path = o_images
         self.out_path = o_dir
+        self.train_datagen = ImageDataGenerator(
+            rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
+        )
+        self.test_datagen = ImageDataGenerator(rescale=None, dtype=precision)
 
     def preprocess_image(
         self,
@@ -44,12 +53,6 @@ class DataManagement:
         """
         img = load_img(image_path)
         img = img_to_array(img, dtype=precision)
-        # img = check_dims(
-        #     img,
-        #     height=dims.get("height", img.shape[0]),
-        #     width=dims.get("width", img.shape[1]),
-        #     channels=dims.get("channels", img.shape[2]),
-        # )
         img = self.check_dims(img, dims.get("dims", img.shape))
         if mode == "div":
             img /= 255.0
@@ -149,30 +152,8 @@ class DataManagement:
                     filename, precision, mode="div", plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
-                    # dims.update(
-                    #     {"height": img.shape[0], "width": img.shape[1], "channels": img.shape[2]}
-                    # )
                     self.input_dims.update({"dims": img.shape})
-                # if any(c in filename for c in TO_COMPARE):
-                #     compare_dict.setdefault("compressed", dict()).setdefault(compression_level, list()).append(img)
                 compressed_images.setdefault(compression_level, list()).append(img)
-                # im = Image.open(filename)
-                # im.load()
-                # plt.figure()
-                # plt.imshow(im)
-                # plt.show()
-                # compressed_images.append(np.asarray(im, dtype="int32"))
-                #
-                # img = load_img(filename)
-                # img = img_to_array(img)
-                # # img = np.expand_dims(img, axis=0)
-                # # o_img = np.copy(img)
-                # # img = inception_v3.preprocess_input(img)
-                # img = preprocess_input(img, data_format='channels_first', mode='tf')  # or data_format='channels_last'
-                # plt.figure()
-                # plt.imshow(img)
-                # plt.show()
-                # test_list.append(img)
 
         compressed_images_array = list()
         for i in compressed_images.values():
@@ -191,14 +172,8 @@ class DataManagement:
                 filename, precision, mode="div", plot=plot, **self.input_dims
             )
             if not self.input_dims:
-                # dims.update(
-                #     {"height": img.shape[0], "width": img.shape[1], "channels": img.shape[2]}
-                # )
                 self.input_dims.update({"dims": img.shape})
             original_images.append(img)
-            # im = Image.open(filename)
-            # im.load()
-            # original_images.append(np.asarray(im, dtype="int32"))
 
         n = num_compressed_images // len(original_images)
         original_images *= n
@@ -269,25 +244,6 @@ class DataManagement:
             plt.ylabel("Score")
             plt.legend()
             plt.title(f_name)
-            # plt.show()
-
-            # plt.figure()
-            # plt.plot(history.history['loss'], label="MSE Training Loss")
-            # plt.plot(history.history['val_loss'], label="MSE Validation Loss")
-            # plt.plot(history.history['rmse'], label="RMSE Training Loss")
-            # plt.plot(history.history['val_rmse'], label="RMSE Validation Loss")
-            # plt.xlabel("Epochs")
-            # plt.ylabel("Score")
-            # plt.legend()
-            # plt.show()
-            #
-            # plt.figure()
-            # plt.plot(history.history['tf_psnr'], label="PSNR Training Loss")
-            # plt.plot(history.history['val_tf_psnr'], label="PSNR Validation Loss")
-            # plt.xlabel("Epochs")
-            # plt.ylabel("Score")
-            # plt.legend()
-            # plt.show()
 
             f_name += " metrics={} model={} precision={}".format(
                 ",".join(
@@ -301,7 +257,6 @@ class DataManagement:
                 precision,
             )
 
-            # out_path = self.unique_file(os.path.join(self.out_path, f_name))
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
             # Save generated plots
@@ -320,7 +275,6 @@ class DataManagement:
             model.save("{}.h5".format(model.name))
         else:
             f_name += "loaded_model={} precision={}".format(model.name, precision)
-            # out_path = self.unique_file(os.path.join(self.out_path, f_name))
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
@@ -331,7 +285,7 @@ class DataManagement:
         if type(input_images) is dict:
             for compression_level, images in input_images.items():
                 for i, (t_im, o_im) in enumerate(
-                    # TODO - stop black adding whitespace after ':'
+                    # TODO - stop black adding whitespace before ':'
                     # fmt: off
                     zip(images, labels[num_images: len(images) + num_images]), start=1
                     # fmt: on
@@ -351,7 +305,6 @@ class DataManagement:
                 )
             num_images += i
 
-        # os.chdir(self.script_dir)
         os.chdir(return_dir)
 
         return timedelta(milliseconds=output_time / num_images)
