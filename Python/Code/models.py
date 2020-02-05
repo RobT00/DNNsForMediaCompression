@@ -69,16 +69,22 @@ class ModelClass:
     ):
         if x_train is None or x_val is None or y_train is None or y_val is None:
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
+        run_epochs = 1000
+        cb_patience = int(run_epochs * 0.15)
         cb = [
-            EarlyStopping(verbose=True, patience=50, monitor="val_tf_psnr", mode="min")
+            EarlyStopping(
+                verbose=True, patience=cb_patience, monitor="val_tf_ssim", mode="min"
+            )
         ]
+        # "val_tf_psnr"
+        # "val_loss" (MS-SSIM)
         print("Training")
         start = timer()
 
         history = model.fit(
             x_train,
             y_train,
-            epochs=1000,
+            epochs=run_epochs,
             batch_size=4,
             validation_data=(x_val, y_val),
             shuffle=True,
@@ -86,7 +92,9 @@ class ModelClass:
             callbacks=cb,
         )
 
-        model.fit_generator()
+        # model.fit_generator()
+
+        # TODO record metrics from screen on best iteration, record metrics for early stop and time to train
 
         end = timer()
         dur = end - start
