@@ -139,25 +139,39 @@ class DataManagement:
 
         return img
 
-    def get_training_images(self, precision="float32", img_format="jpg", plot=False):
+    def get_training_images(
+        self, precision="float32", img_format="jpg", plot=False, generator=False
+    ):
         compressed_images = dict()
-        for compression_level in os.listdir(self.compressed_images_path):
-            for filename in glob.glob(
-                # fmt: off
-                os.path.join(self.compressed_images_path,
-                             compression_level) + f"/*.{img_format}"
-                # fmt: on
-            ):
+        if generator:
+            for filename in glob.glob(self.compressed_images_path + f"/*.{img_format}"):
                 img = self.preprocess_image(
                     filename, precision, mode="div", plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
                     self.input_dims.update({"dims": img.shape})
+                compression_level = int(
+                    os.path.basename(filename).split(img_format)[0].split("_")[1][:-1]
+                )
                 compressed_images.setdefault(compression_level, list()).append(img)
+        else:
+            for compression_level in os.listdir(self.compressed_images_path):
+                for filename in glob.glob(
+                    # fmt: off
+                    os.path.join(self.compressed_images_path,
+                                 compression_level) + f"/*.{img_format}"
+                    # fmt: on
+                ):
+                    img = self.preprocess_image(
+                        filename, precision, mode="div", plot=plot, **self.input_dims
+                    )
+                    if not self.input_dims:
+                        self.input_dims.update({"dims": img.shape})
+                    compressed_images.setdefault(compression_level, list()).append(img)
 
-        compressed_images_array = list()
-        for i in compressed_images.values():
-            compressed_images_array.extend(i)
+            compressed_images_array = list()
+            for i in compressed_images.values():
+                compressed_images_array.extend(i)
 
         compressed_images_array = np.asarray(compressed_images_array, dtype=precision)
 
