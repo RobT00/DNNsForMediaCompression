@@ -5,5 +5,5 @@ flake8-bugbear
 numpy
 matplotlib
 keras
-scitkit-learn
+scikit-learn
 setuptools>=41.0.0
