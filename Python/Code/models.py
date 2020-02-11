@@ -9,14 +9,21 @@ from timeit import default_timer as timer
 from keras import Model, Input
 from keras.layers import (
     Conv2D,
+    Conv3D,
     Conv2DTranspose,
+    Conv3DTranspose,
     Dropout,
     MaxPooling2D,
+    MaxPooling3D,
     AveragePooling2D,
+    AveragePooling3D,
     UpSampling2D,
+    UpSampling3D,
     ZeroPadding2D,
+    ZeroPadding3D,
     GaussianDropout,
     Cropping2D,
+    Cropping3D,
     add,
     Flatten,
     BatchNormalization,
@@ -82,8 +89,8 @@ class ModelClass:
         y_train=None,
         y_val=None,
         generator=False,
-        run_epochs=10,
-        batch_size=8,
+        run_epochs=100,
+        batch_size=2,
         util_class=None,
         **kwargs,
     ):
@@ -778,6 +785,57 @@ class KerasAE(ModelClass):
         x = Conv2D(16, (3, 3), activation="relu", padding="same")(x)
         x = UpSampling2D((2, 2))(x)
         decode = Conv2D(3, (3, 3), activation="tanh", padding="same")(x)
+
+        model = Model(self.input, decode)
+
+        model.name = self.name
+
+        return model
+
+
+class Attempt1_3D(ModelClass):
+    def __init__(self, dims, precision="float32", **kwargs):
+        super().__init__(
+            dims, precision, **kwargs
+        )  # Is equivalent to super(Attempt1, self).__init__(dims)
+        self.name = "Attempt1_3D"
+
+    def build(self):
+        x = Conv3D(filters=64, kernel_size=(1, 3, 3), activation="relu")(self.input)
+        x = ZeroPadding3D(padding=(0, 2, 2))(x)
+        x = Conv3D(filters=32, kernel_size=(1, 3, 3), activation="relu")(x)
+        x = MaxPooling3D(pool_size=(1, 2, 2))(x)
+        x = Conv3D(filters=64, kernel_size=(1, 3, 3), activation="tanh")(x)
+        x = Dropout(0.05)(x)
+        encode = Conv3D(filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2))(x)
+
+        # model.add(Flatten())
+        x = UpSampling3D(size=(1, 2, 2))(encode)
+        x = Conv3DTranspose(
+            filters=8, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
+        )(x)
+        x = Conv3DTranspose(
+            filters=16,
+            kernel_size=(1, 3, 3),
+            strides=(1, 1, 1),
+            padding="valid",
+            kernel_regularizer=regularizers.l2(0.01),
+        )(x)
+        x = UpSampling3D(size=(1, 2, 2))(x)
+        x = Conv3DTranspose(
+            filters=32, kernel_size=(1, 3, 3), strides=(1, 1, 1), padding="same"
+        )(x)
+        x = ZeroPadding3D(padding=(0, 2, 2))(x)
+        x = GaussianDropout(0.02)(x)
+        x = Conv3DTranspose(
+            filters=16, kernel_size=(1, 3, 3), activation="relu", padding="same"
+        )(x)
+        x = Conv3DTranspose(
+            filters=8, kernel_size=(1, 5, 5), strides=(1, 1, 1), padding="same"
+        )(x)
+        decode = Conv3D(
+            filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
+        )(x)
 
         model = Model(self.input, decode)
 

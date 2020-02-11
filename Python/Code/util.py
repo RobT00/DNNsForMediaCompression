@@ -16,17 +16,22 @@ from keras_applications.imagenet_utils import preprocess_input
 import matplotlib.pyplot as plt
 import numpy as np
 import glob
+import cv2
 from timeit import default_timer as timer  # Measured in seconds
 
 
 class DataManagement:
-    def __init__(self, script_dir, c_images, o_images, o_dir, precision):
+    def __init__(self, script_dir, sequences, c_images, o_images, o_dir, precision):
         self.compare_dict = dict()
         self.input_dims = dict()
         self.script_dir = script_dir
-        self.compressed_images_path = c_images
-        self.original_images_path = o_images
+        self.sequences = sequences
+        self.compressed_data_path = c_images
+        self.original_data_path = o_images
         self.out_path = o_dir
+        # Temp variable for testing sequences - video
+        self.frames = 5
+        self.fps = None
         # self.train_datagen = ImageDataGenerator(
         #     rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
         # )
@@ -64,6 +69,73 @@ class DataManagement:
             plt.show()
 
         return img
+
+    def preprocess_video(
+        self,
+        video_path,
+        precision,
+        data_format="channels_first",
+        mode="div",
+        plot=False,
+        **dims,
+    ):
+        """
+        Preprocess images, scale and convert to numpy array for feeding to model.
+        :param video_path: Path to video
+        :param data_format: Format to process image
+        :param mode: Mode to process image
+        :param precision: Precision for ndarray
+        :param plot: Boolean - to plot image
+        :param dims: Image dimensions to be used, tuple - (height, width, channels)
+        :return: Processed image
+        """
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise UserWarning("Cannot read video, is codec installed?")
+        from tqdm import tqdm
+
+        # while cap.isOpened():
+        # Go to end of video
+        cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
+        # Get duration in milliseconds
+        msec_dur = cap.get(cv2.CAP_PROP_POS_MSEC)
+        num_frames_1 = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        fps = (num_frames_1 / msec_dur) * 1000
+        if not self.fps:
+            self.fps = fps
+        # num_frames_2 = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        # fps_2 = (num_frames_2 / msec_dur) * 1000
+        # frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        # frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        # channels = cap.get(
+        #     cv2.CAP_PROP_CHANNEL
+        # )  # Doesn't seem to do much (with greyscale)
+        # Return to start
+        cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)
+        vid = list()
+        # TODO - Use all frames
+        num_frames_1 = self.frames
+        for i in tqdm(range(int(num_frames_1)), position=0, leave=True):
+            # cap.set(1, i)
+            ret, frame = cap.read()
+            # cv2.imshow('frame', frame)
+            if not ret:
+                break
+            # frame = img_to_array(frame, dtype=precision)  # Needed to infer precision
+            frame = frame.astype(precision, copy=False)
+            frame = self.check_dims(frame, dims.get("dims", frame.shape))
+            if mode == "div":
+                frame /= 255.0
+            else:
+                frame = preprocess_input(frame, data_format=data_format, mode=mode)
+            if plot:
+                plt.figure()
+                plt.imshow(frame.astype(float))
+                plt.show()
+            vid.append(frame)
+        cap.release()
+
+        return vid
 
     @staticmethod
     def check_dims(image, desired_dims):
@@ -123,9 +195,10 @@ class DataManagement:
         #     img = img.reshape((img.shape[1], img.shape[2], 3))
         # img /= 2.0
         # img += 0.
-        if img.shape[3] != 3:
+        if img.shape[-1] != 3:
             raise ValueError("Not RGB")
-        img = img.reshape((img.shape[1], img.shape[2], img.shape[3]))
+        if len(img.shape) == 4:
+            img = img.reshape((img.shape[1], img.shape[2], img.shape[3]))
         try:
             img *= 255.0
         except RuntimeWarning:
@@ -139,12 +212,38 @@ class DataManagement:
 
         return img
 
+    def get_training_data(self, **kwargs):
+        if self.sequences:
+            return self.get_training_videos(**kwargs)
+        else:
+            return self.get_training_images(**kwargs)
+
+    def get_training_videos(self, precision="float32", img_format="mp4", plot=False):
+        # raise UserWarning("The generator must be used when training on video")
+        compressed_video = dict()
+        for compression_level in range(1):
+            for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
+                vid = self.preprocess_video(
+                    filename, precision, mode="div", plot=plot, **self.input_dims
+                )
+                if not self.input_dims:
+                    self.input_dims.update({"dims": vid[0].shape})
+                compressed_video.setdefault(compression_level, list()).append(vid)
+
+        compressed_video_array = list()
+        for i in compressed_video.values():
+            compressed_video_array.extend(i)
+
+        compressed_video_array = np.asarray(compressed_video_array, dtype=precision)
+
+        return compressed_video, compressed_video_array
+
     def get_training_images(self, precision="float32", img_format="jpg", plot=False):
         compressed_images = dict()
-        for compression_level in os.listdir(self.compressed_images_path):
+        for compression_level in os.listdir(self.compressed_data_path):
             for filename in glob.glob(
                 # fmt: off
-                os.path.join(self.compressed_images_path,
+                os.path.join(self.compressed_data_path,
                              compression_level) + f"/*.{img_format}"
                 # fmt: on
             ):
@@ -163,11 +262,36 @@ class DataManagement:
 
         return compressed_images, compressed_images_array
 
+    def get_labels(self, num_training, **kwargs):
+        if self.sequences:
+            return self.get_label_videos(num_training, **kwargs)
+        else:
+            return self.get_label_images(num_training, **kwargs)
+
+    def get_label_videos(
+        self, num_compressed_videos, precision="float32", img_format="mp4", plot=False
+    ):
+        # raise UserWarning("The generator must be used when training on video")
+        original_videos = list()
+        for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
+            vid = self.preprocess_video(
+                filename, precision, mode="div", plot=plot, **self.input_dims
+            )
+            if not self.input_dims:
+                self.input_dims.update({"dims": vid[0].shape})
+            original_videos.append(vid)
+
+        n = num_compressed_videos // len(original_videos)
+        original_videos *= n
+        original_videos = np.asarray(original_videos, dtype=precision)
+
+        return original_videos
+
     def get_label_images(
         self, num_compressed_images, precision="float32", img_format="png", plot=False
     ):
         original_images = list()
-        for filename in glob.glob(self.original_images_path + f"/*.{img_format}"):
+        for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
             img = self.preprocess_image(
                 filename, precision, mode="div", plot=plot, **self.input_dims
             )
@@ -182,6 +306,12 @@ class DataManagement:
         return original_images
 
     def get_input_dims(self):
+        if self.sequences:
+            # Add number of frames - 30 for now
+            d = self.input_dims.get("dims", (144, 176, 3))
+            d = (self.frames,) + d  # Frames first
+            # d += (300,)  # Frames last
+            self.input_dims.update({"dims": d})
         return self.input_dims.get("dims", (512, 768, 3))
 
     def generator_function(self, batch_size=42, precision="float32"):
@@ -206,8 +336,8 @@ class DataManagement:
         # return (input_img, out_img)
         # TODO - Is this line ok ?
         files = [
-            os.path.join(self.compressed_images_path, f)
-            for f in os.listdir(self.compressed_images_path)
+            os.path.join(self.compressed_data_path, f)
+            for f in os.listdir(self.compressed_data_path)
         ]
         # if not self.input_dims:
         self.input_dims.update({"dims": self.get_input_dims()})
@@ -223,7 +353,7 @@ class DataManagement:
                 input = self.preprocess_image(input_img, precision, **self.input_dims)
 
                 file_name = os.path.basename(input_img).split("_")[0]
-                file_path = os.path.join(self.original_images_path, f"{file_name}.png")
+                file_path = os.path.join(self.original_data_path, f"{file_name}.png")
                 output = self.preprocess_image(file_path, precision, **self.input_dims)
 
                 batch_input.append(input)
@@ -253,7 +383,13 @@ class DataManagement:
 
         return index + dest_path
 
-    def output_results(
+    def output_results(self, model, input_data, labels, **kwargs):
+        if self.sequences:
+            return self.output_results_videos(model, input_data, labels, **kwargs)
+        else:
+            return self.output_results_images(model, input_data, labels, **kwargs)
+
+    def output_results_images(
         self,
         model,
         input_images,
@@ -404,6 +540,186 @@ class DataManagement:
         save_img("trained.png", self.deprocess_image(train_pred, plot=plot))
 
         return (end - start) * 1000
+
+    def output_results_videos(
+        self,
+        model,
+        input_videos,
+        labels,
+        training_data=None,
+        precision="float32",
+        loss_fn="mse",
+        validation=True,
+    ):
+        f_name = ""
+        return_dir = os.getcwd()
+        self.out_path = os.path.join(self.out_path, model.name)
+        if not os.path.exists(self.out_path):
+            os.makedirs(self.out_path)
+        os.chdir(self.out_path)
+        if training_data:
+            # Create folder name based on params
+            # TODO - Mono or Colour
+            f_name += "optimiser={} epochs={} batch_size={}".format(
+                training_data.model.optimizer.iterations.name.split("/")[0],
+                # training_data.params["epochs"],
+                len(training_data.epoch),
+                training_data.params["batch_size"],
+            )
+
+            # Create plots to save training records
+            fig_1 = plt.figure()
+            plt.plot(
+                np.asarray(training_data.history["loss"]) * -1.0,
+                label=f"{loss_fn} Training Loss",
+            )
+            if validation:
+                plt.plot(
+                    np.asarray(training_data.history["val_loss"]) * -1.0,
+                    label=f"{loss_fn} Validation Loss",
+                )
+            plt.xlabel("Epochs")
+            plt.ylabel("Score")
+            plt.legend()
+            plt.title(f_name)
+            # plt.show()
+
+            # fig_2 = plt.figure()
+            # plt.plot(
+            #     np.asarray(training_data.history["tf_psnr"]) * -1.0,
+            #     label="PSNR Training Loss",
+            # )
+            # if validation:
+            #     plt.plot(
+            #         np.asarray(training_data.history["val_tf_psnr"]) * -1.0,
+            #         label="PSNR Validation Loss",
+            #     )
+            # plt.xlabel("Epochs")
+            # plt.ylabel("Score")
+            # plt.legend()
+            # plt.title(f_name)
+
+            f_name += " metrics={} model={} precision={}".format(
+                ",".join(
+                    [
+                        i
+                        for i in training_data.params["metrics"]
+                        if i != "loss" and i[:4] != "val_"
+                    ]
+                ),
+                model.name,
+                precision,
+            )
+
+            out_path = os.path.join(self.out_path, self.unique_file(f_name))
+
+            # Save generated plots
+            p_dir = os.path.join(out_path, "Plots")
+            os.makedirs(p_dir)
+            os.chdir(p_dir)
+
+            fig_1.savefig(f"{loss_fn}.png")
+            # fig_2.savefig("PSNR.png")
+
+            # Save model
+            m_dir = os.path.join(out_path, "Model")
+            os.makedirs(m_dir)
+            os.chdir(m_dir)
+
+            model.save("{}.h5".format(model.name))
+        else:
+            f_name += "loaded_model={} precision={}".format(model.name, precision)
+            out_path = os.path.join(self.out_path, self.unique_file(f_name))
+
+        # Save sample training and validation images
+        t_dir = os.path.join(out_path, "Training")
+        output_time = 0.0
+        i = 0  # So that i will always be defined
+        num_videos = 0
+        if type(input_videos) is dict:
+            for compression_level, videos in input_videos.items():
+                for i, (t_im, o_im) in enumerate(
+                    # TODO - stop black adding whitespace before ':'
+                    # fmt: off
+                    zip(videos, labels[num_videos: len(videos) + num_videos]), start=1
+                    # fmt: on
+                ):
+                    output_time += self.output_helper_video(
+                        t_dir,
+                        t_im,
+                        o_im,
+                        model,
+                        output_append=[str(compression_level), str(i)],
+                    )
+                num_videos += i
+        else:
+            for i, (t_im, o_im) in enumerate(zip(input_videos, labels), start=1):
+                output_time += self.output_helper_video(
+                    t_dir, t_im, o_im, model, output_append=str(i)
+                )
+            num_videos += i
+
+        os.chdir(return_dir)
+
+        return timedelta(milliseconds=output_time / num_videos)
+
+    def output_helper_video(
+        self,
+        output_directory,
+        input_video,
+        original_video,
+        model,
+        output_append=None,
+        plot=False,
+    ):
+        if type(output_append) is list:
+            for appendage in output_append:
+                output_directory = os.path.join(output_directory, appendage)
+        elif output_append:
+            output_directory = os.path.join(output_directory, output_append)
+
+        os.makedirs(output_directory)
+        os.chdir(output_directory)
+
+        train_video = np.expand_dims(input_video, axis=0)
+        start = timer()
+        train_pred = model.predict(train_video)
+        end = timer()
+        # save_img(
+        #     "original.mp4",
+        #     self.deprocess_image(np.expand_dims(original_video, axis=0), plot=plot),
+        # )
+        self.deprocess_video(original_video, "original")
+        # save_img("compressed.mp4", self.deprocess_image(train_im, plot=plot))
+        self.deprocess_video(train_video.squeeze(axis=0), "compressed")
+        # save_img("trained.mp4", self.deprocess_image(train_pred, plot=plot))
+        self.deprocess_video(train_pred.squeeze(axis=0), "trained")
+
+        return (end - start) * 1000
+
+    def deprocess_video(self, video, file_name, file_format="avi", **kwargs):
+        """
+        Convert the video from a numpy array back to [0..255] for viewing / saving.
+        :param video: Video as numpy array
+        :param file_name: Name to save video under
+        :param file_format: Format / container to save video as
+        :param fps: Playback speed of video
+        :return: Restored image
+        """
+        file_name = file_name + "." + file_format
+        width = video.shape[-2]
+        height = video.shape[-3]
+
+        # initialise video writer
+        # https://stackoverflow.com/questions/51914683/how-to-make-video-from-an-updating-numpy-array-in-python
+        fourcc = cv2.VideoWriter_fourcc("M", "J", "P", "G")
+        writer = cv2.VideoWriter(file_name, fourcc, self.fps, (width, height))
+
+        for frame in video:
+            frame = self.deprocess_image(frame, **kwargs)
+            writer.write(frame)
+        # Close video writer
+        writer.release()
 
     @staticmethod
     def get_model_from_string(classname):
