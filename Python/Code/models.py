@@ -36,7 +36,7 @@ from keras.preprocessing.image import ImageDataGenerator
 
 
 class ModelClass:
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         self.set_precision(precision)
         self.input = self.input_layer(dims)
 
@@ -49,7 +49,9 @@ class ModelClass:
         K.set_floatx(precision)
 
     @staticmethod
-    def ready_training(compressed_images, original_images, split=0.2, state=42):
+    def ready_training(
+        compressed_images, original_images, split=0.2, state=42, **kwargs
+    ):
         # test_list_expanded = np.expand_dims(test_list, axis=0)
         # test_list_other = np.expand_dims(test_list, axis=1)
 
@@ -79,11 +81,16 @@ class ModelClass:
         x_val=None,
         y_train=None,
         y_val=None,
+        generator=False,
+        run_epochs=10,
+        batch_size=8,
+        util_class=None,
         **kwargs,
     ):
-        if x_train is None or x_val is None or y_train is None or y_val is None:
+        if not generator and (
+            x_train is None or x_val is None or y_train is None or y_val is None
+        ):
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
-        run_epochs = 1000
         cb_patience = int(run_epochs * 0.15)
         cb = [
             EarlyStopping(
@@ -95,18 +102,35 @@ class ModelClass:
         print("Training")
         start = timer()
 
-        history = model.fit(
-            x_train,
-            y_train,
-            epochs=run_epochs,
-            batch_size=4,
-            validation_data=(x_val, y_val),
-            shuffle=True,
-            verbose=2,
-            callbacks=cb,
-        )
-
-        # model.fit_generator()
+        if generator:
+            # TODO - Alter max_queue_size ?
+            history = model.fit_generator(
+                util_class.generator_function(batch_size=batch_size, **kwargs),
+                steps_per_epoch=144 // batch_size,  # Hardcoded --> 144 images in /Test
+                epochs=run_epochs,
+                verbose=2,
+                callbacks=cb,
+                validation_data=None,
+                validation_steps=None,
+                validation_freq=1,
+                class_weight=None,
+                max_queue_size=10,
+                workers=1,
+                use_multiprocessing=False,
+                shuffle=True,
+                initial_epoch=0,
+            )
+        else:
+            history = model.fit(
+                x_train,
+                y_train,
+                epochs=run_epochs,
+                batch_size=batch_size,
+                validation_data=(x_val, y_val),
+                shuffle=True,
+                verbose=2,
+                callbacks=cb,
+            )
 
         # TODO record metrics from screen on best iteration, record metrics for early stop and time to train
 
@@ -143,9 +167,9 @@ class ModelClass:
 
 
 class Attempt1(ModelClass):
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
-            dims, precision
+            dims, precision, **kwargs
         )  # Is equivalent to super(Attempt1, self).__init__(dims)
         self.name = "Attempt1"
 
@@ -195,9 +219,9 @@ class Attempt2(ModelClass):
     Model seems too large current, cannot allocate layer (2048, 3072, 69)
     """
 
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
-            dims, precision
+            dims, precision, **kwargs
         )  # Is equivalent to super(Attempt2, self).__init__(dims)
         self.name = "Attempt2"
 
@@ -399,9 +423,9 @@ class Attempt3(ModelClass):
     Model seems too large current, cannot allocate layer (2048, 3072, 69)
     """
 
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
-            dims, precision
+            dims, precision, **kwargs
         )  # Is equivalent to super(Attempt3, self).__init__(dims)
         self.name = "Attempt3"
 
@@ -624,8 +648,8 @@ class Attempt4(ModelClass):
     Decode to (2x) then convolve to output image
     """
 
-    def __init__(self, dims, precision="float32"):
-        super().__init__(dims, precision)
+    def __init__(self, dims, precision="float32", **kwargs):
+        super().__init__(dims, precision, **kwargs)
         self.name = "Attempt4"
 
     def build(self):
@@ -733,9 +757,9 @@ class Attempt4(ModelClass):
 
 
 class KerasAE(ModelClass):
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
-            dims, precision
+            dims, precision, **kwargs
         )  # Is equivalent to super(KerasAE, self).__init__(dims)
         self.name = "Keras CNN AE"
 
@@ -763,9 +787,9 @@ class KerasAE(ModelClass):
 
 
 class KerasDenoise(ModelClass):
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
-            dims, precision
+            dims, precision, **kwargs
         )  # Is equivalent to super(KerasDenoise, self).__init__(dims)
         self.name = "Keras Denoise AE"
 
@@ -807,9 +831,9 @@ class KerasDenoise(ModelClass):
 
 
 class ResNet(ModelClass):
-    def __init__(self, dims, precision="float32"):
+    def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
-            dims, precision
+            dims, precision, **kwargs
         )  # Is equivalent to super(KerasDenoise, self).__init__(dims)
         self.name = "ResNet"
 
@@ -908,8 +932,8 @@ class ResNet(ModelClass):
         num_filters = 16
         num_res_blocks = int((depth - 2) / 6)
 
-        inputs = Input(shape=self.input)
-        x = self.resnet_layer(inputs=inputs)
+        # inputs = Input(shape=self.input)
+        x = self.resnet_layer(inputs=self.input)
         # Instantiate the stack of residual units
         for stack in range(3):
             for res_block in range(num_res_blocks):
@@ -947,7 +971,7 @@ class ResNet(ModelClass):
         # )(y)
 
         # Instantiate model.
-        model = Model(inputs=inputs, outputs=outputs)
+        model = Model(inputs=self.input, outputs=outputs)
         return model
 
     def resnet_v2(self, depth, num_classes=10):
@@ -981,10 +1005,10 @@ class ResNet(ModelClass):
         num_filters_in = 16
         num_res_blocks = int((depth - 2) / 9)
 
-        inputs = Input(shape=self.input)
+        # inputs = Input(shape=self.input) # Is self.input
         # v2 performs Conv2D with BN-ReLU on input before splitting into 2 paths
         x = self.resnet_layer(
-            inputs=inputs, num_filters=num_filters_in, conv_first=True
+            inputs=self.input, num_filters=num_filters_in, conv_first=True
         )
 
         # Instantiate the stack of residual units
@@ -1049,7 +1073,7 @@ class ResNet(ModelClass):
         # )(y)
 
         # Instantiate model.
-        model = Model(inputs=inputs, outputs=outputs)
+        model = Model(inputs=self.input, outputs=outputs)
         return model
 
     def train(
@@ -1061,11 +1085,14 @@ class ResNet(ModelClass):
         x_val=None,
         y_train=None,
         y_val=None,
-        subtract_pixel_mean=True,
-        data_augmentation=True,
+        subtract_pixel_mean=False,
+        data_augmentation=False,
+        generator=False,
         **kwargs,
     ):
-        if x_train is None or x_val is None or y_train is None or y_val is None:
+        if not generator and (
+            x_train is None or x_val is None or y_train is None or y_val is None
+        ):
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
 
         run_epochs = 200

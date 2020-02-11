@@ -27,10 +27,10 @@ class DataManagement:
         self.compressed_images_path = c_images
         self.original_images_path = o_images
         self.out_path = o_dir
-        self.train_datagen = ImageDataGenerator(
-            rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
-        )
-        self.test_datagen = ImageDataGenerator(rescale=None, dtype=precision)
+        # self.train_datagen = ImageDataGenerator(
+        #     rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
+        # )
+        # self.test_datagen = ImageDataGenerator(rescale=None, dtype=precision)
 
     def preprocess_image(
         self,
@@ -139,39 +139,25 @@ class DataManagement:
 
         return img
 
-    def get_training_images(
-        self, precision="float32", img_format="jpg", plot=False, generator=False
-    ):
+    def get_training_images(self, precision="float32", img_format="jpg", plot=False):
         compressed_images = dict()
-        if generator:
-            for filename in glob.glob(self.compressed_images_path + f"/*.{img_format}"):
+        for compression_level in os.listdir(self.compressed_images_path):
+            for filename in glob.glob(
+                # fmt: off
+                os.path.join(self.compressed_images_path,
+                             compression_level) + f"/*.{img_format}"
+                # fmt: on
+            ):
                 img = self.preprocess_image(
                     filename, precision, mode="div", plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
                     self.input_dims.update({"dims": img.shape})
-                compression_level = int(
-                    os.path.basename(filename).split(img_format)[0].split("_")[1][:-1]
-                )
                 compressed_images.setdefault(compression_level, list()).append(img)
-        else:
-            for compression_level in os.listdir(self.compressed_images_path):
-                for filename in glob.glob(
-                    # fmt: off
-                    os.path.join(self.compressed_images_path,
-                                 compression_level) + f"/*.{img_format}"
-                    # fmt: on
-                ):
-                    img = self.preprocess_image(
-                        filename, precision, mode="div", plot=plot, **self.input_dims
-                    )
-                    if not self.input_dims:
-                        self.input_dims.update({"dims": img.shape})
-                    compressed_images.setdefault(compression_level, list()).append(img)
 
-            compressed_images_array = list()
-            for i in compressed_images.values():
-                compressed_images_array.extend(i)
+        compressed_images_array = list()
+        for i in compressed_images.values():
+            compressed_images_array.extend(i)
 
         compressed_images_array = np.asarray(compressed_images_array, dtype=precision)
 
@@ -198,6 +184,58 @@ class DataManagement:
     def get_input_dims(self):
         return self.input_dims.get("dims", (512, 768, 3))
 
+    def generator_function(self, batch_size=42, precision="float32"):
+        # TODO - Use Boolean arg/different function for video
+        # Get input image
+        # input_img = self.preprocess_image()
+        # Match output image
+        # out_name = input_img.name.split("_")[0]
+        # Do glob to find matching image
+        # for filename in glob.glob(self.compressed_images_path + f"/*.{img_format}"):
+        #     img = self.preprocess_image(
+        #         filename, precision, mode="div", plot=plot, **self.input_dims
+        #     )
+        #     if not self.input_dims:
+        #         self.input_dims.update({"dims": img.shape})
+        #     compression_level = int(
+        #         os.path.basename(filename).split(img_format)[0].split("_")[1][:-1]
+        #     )
+        #     compressed_images.setdefault(compression_level, list()).append(img)
+        # out_img = self.preprocess_image(glob.find.image(out_name))
+        # Return pairwise training set
+        # return (input_img, out_img)
+        # TODO - Is this line ok ?
+        files = [
+            os.path.join(self.compressed_images_path, f)
+            for f in os.listdir(self.compressed_images_path)
+        ]
+        # if not self.input_dims:
+        self.input_dims.update({"dims": self.get_input_dims()})
+        while True:
+            # Select files for the batch
+            # This may not work
+            batch_paths = np.random.choice(a=files, size=batch_size)
+            batch_input = list()
+            batch_output = list()
+
+            # Read in each input, perform pre-processing and get labels (original images)
+            for input_img in batch_paths:
+                input = self.preprocess_image(input_img, precision, **self.input_dims)
+
+                file_name = os.path.basename(input_img).split("_")[0]
+                file_path = os.path.join(self.original_images_path, f"{file_name}.png")
+                output = self.preprocess_image(file_path, precision, **self.input_dims)
+
+                batch_input.append(input)
+                batch_output.append(output)
+
+            # Return a tuple of (input, output) to feed network
+            batch_x = np.asarray(batch_input, dtype=precision)
+            batch_y = np.asarray(batch_output, dtype=precision)
+
+            # return batch_x, batch_y
+            yield batch_x, batch_y
+
     @staticmethod
     def unique_file(dest_path):
         """
@@ -223,6 +261,7 @@ class DataManagement:
         training_data=None,
         precision="float32",
         loss_fn="MS-SSIM",
+        validation=True,
     ):
         f_name = ""
         return_dir = os.getcwd()
@@ -241,10 +280,15 @@ class DataManagement:
 
             # Create plots to save training records
             fig_1 = plt.figure()
-            plt.plot(training_data.history["loss"], label=f"{loss_fn} Training Loss")
             plt.plot(
-                training_data.history["val_loss"], label=f"{loss_fn} Validation Loss"
+                np.asarray(training_data.history["loss"]) * -1.0,
+                label=f"{loss_fn} Training Loss",
             )
+            if validation:
+                plt.plot(
+                    np.asarray(training_data.history["val_loss"]) * -1.0,
+                    label=f"{loss_fn} Validation Loss",
+                )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
@@ -252,8 +296,15 @@ class DataManagement:
             # plt.show()
 
             fig_2 = plt.figure()
-            plt.plot(training_data.history["tf_psnr"], label="PSNR Training Loss")
-            plt.plot(training_data.history["val_tf_psnr"], label="PSNR Validation Loss")
+            plt.plot(
+                np.asarray(training_data.history["tf_psnr"]) * -1.0,
+                label="PSNR Training Loss",
+            )
+            if validation:
+                plt.plot(
+                    np.asarray(training_data.history["val_tf_psnr"]) * -1.0,
+                    label="PSNR Validation Loss",
+                )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
