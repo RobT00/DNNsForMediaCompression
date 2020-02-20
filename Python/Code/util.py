@@ -30,7 +30,8 @@ class DataManagement:
         self.original_data_path = o_images
         self.out_path = o_dir
         # Temp variable for testing sequences - video
-        self.frames = 5
+        # self.frames = 5
+        self.frames = 250
         self.fps = None
         # self.train_datagen = ImageDataGenerator(
         #     rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
@@ -269,11 +270,11 @@ class DataManagement:
             return self.get_label_images(num_training, **kwargs)
 
     def get_label_videos(
-        self, num_compressed_videos, precision="float32", img_format="mp4", plot=False
+        self, num_compressed_videos, precision="float32", img_format="y4m", plot=False
     ):
         # raise UserWarning("The generator must be used when training on video")
         original_videos = list()
-        for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
+        for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
             vid = self.preprocess_video(
                 filename, precision, mode="div", plot=plot, **self.input_dims
             )
