@@ -310,7 +310,8 @@ class DataManagement:
         if self.sequences:
             # Add number of frames - 30 for now
             d = self.input_dims.get("dims", (144, 176, 3))
-            d = (self.frames,) + d  # Frames first
+            # d = (self.frames,) + d  # Frames first
+            d = (None,) + d  # Unspecified number of frames
             # d += (300,)  # Frames last
             self.input_dims.update({"dims": d})
         return self.input_dims.get("dims", (512, 768, 3))

@@ -6,4 +6,6 @@ numpy
 matplotlib
 keras
 scikit-learn
+opencv-python
+tqdm
 setuptools>=41.0.0
