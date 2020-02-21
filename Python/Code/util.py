@@ -30,8 +30,8 @@ class DataManagement:
         self.original_data_path = o_images
         self.out_path = o_dir
         # Temp variable for testing sequences - video
-        # self.frames = 5
-        self.frames = 250
+        self.frames = 5
+        # self.frames = 250
         self.fps = None
         # self.train_datagen = ImageDataGenerator(
         #     rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
@@ -78,6 +78,7 @@ class DataManagement:
         data_format="channels_first",
         mode="div",
         plot=False,
+        get_frames=None,
         **dims,
     ):
         """
@@ -87,23 +88,28 @@ class DataManagement:
         :param mode: Mode to process image
         :param precision: Precision for ndarray
         :param plot: Boolean - to plot image
+        :param get_frames: Frames to get -- when using generator
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
         :return: Processed image
         """
-        cap = cv2.VideoCapture(video_path)
+        if get_frames is not None:
+            # Video is already opened and streaming
+            cap = video_path
+        else:
+            cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise UserWarning("Cannot read video, is codec installed?")
-        from tqdm import tqdm
+        # from tqdm import tqdm
 
         # while cap.isOpened():
         # Go to end of video
-        cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
-        # Get duration in milliseconds
-        msec_dur = cap.get(cv2.CAP_PROP_POS_MSEC)
-        num_frames_1 = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-        fps = (num_frames_1 / msec_dur) * 1000
-        if not self.fps:
-            self.fps = fps
+        # cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
+        # # Get duration in milliseconds
+        # msec_dur = cap.get(cv2.CAP_PROP_POS_MSEC)
+        # num_frames_1 = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        # fps = (num_frames_1 / msec_dur) * 1000
+        # if not self.fps:
+        #     self.fps = fps
         # num_frames_2 = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         # fps_2 = (num_frames_2 / msec_dur) * 1000
         # frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -112,12 +118,13 @@ class DataManagement:
         #     cv2.CAP_PROP_CHANNEL
         # )  # Doesn't seem to do much (with greyscale)
         # Return to start
-        cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)
+        # cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)
         vid = list()
         # TODO - Use all frames
-        num_frames_1 = self.frames
-        for i in tqdm(range(int(num_frames_1)), position=0, leave=True):
-            # cap.set(1, i)
+        num_frames_1 = get_frames if get_frames is not None else range(int(self.frames))
+        # for i in tqdm(num_frames_1, position=0, leave=True):
+        for i in num_frames_1:
+            cap.set(1, i)
             ret, frame = cap.read()
             # cv2.imshow('frame', frame)
             if not ret:
@@ -137,6 +144,38 @@ class DataManagement:
         cap.release()
 
         return vid
+
+    @staticmethod
+    def load_video(video_path):
+        """
+        Function for loading a video to the stream, be sure to release the video when done!
+        :param video_path: Path to video file
+        :return: Video stream
+        """
+        video = cv2.VideoCapture(video_path)
+        if not video.isOpened():
+            raise UserWarning("Cannot read video, is codec installed?")
+
+        return video
+
+    def video_metadata(self, video):
+        """
+        Function for gather metadata about video, i.e length and fps
+        :param video: Input video
+        :return:
+        """
+        metadata = dict()
+        video.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
+        # Get duration in milliseconds
+        msec_dur = video.get(cv2.CAP_PROP_POS_MSEC)
+        metadata.update({"duration": msec_dur})
+        num_frames = int(video.get(cv2.CAP_PROP_POS_FRAMES))
+        metadata.update({"frames": num_frames})
+        fps = (num_frames / msec_dur) * 1000
+        metadata.update({"fps": fps})
+        if not self.fps:
+            self.fps = fps
+        return metadata
 
     @staticmethod
     def check_dims(image, desired_dims):
@@ -307,17 +346,35 @@ class DataManagement:
         return original_images
 
     def get_input_dims(self):
+        # TODO - Open an image/video at random, get metadata, but shape so that
+        # width > height
         if self.sequences:
-            # Add number of frames - 30 for now
-            d = self.input_dims.get("dims", (144, 176, 3))
-            # d = (self.frames,) + d  # Frames first
-            d = (None,) + d  # Unspecified number of frames
+            # Add number of frames
+            # d = self.input_dims.get("dims", (144, 176, 3))
+            d = self.input_dims.get("dims", (288, 352, 3))
+            d = (self.frames,) + d  # Frames first
+            # d = (None,) + d  # Unspecified number of frames
             # d += (300,)  # Frames last
-            self.input_dims.update({"dims": d})
-        return self.input_dims.get("dims", (512, 768, 3))
+            # self.input_dims.update({"dims": d})
+        else:
+            d = self.input_dims.get("dims", (512, 768, 3))
+        return d
 
-    def generator_function(self, batch_size=42, precision="float32"):
-        # TODO - Use Boolean arg/different function for video
+    def generator_function(self):
+        files = [
+            os.path.join(self.compressed_data_path, f)
+            for f in os.listdir(self.compressed_data_path)
+        ]
+        # if not self.input_dims:
+        if self.sequences:
+            function = self.video_generator
+        else:
+            function = self.image_generator
+        return files, function
+
+    def image_generator(
+        self, files, batch_size=42, precision="float32", file_type="png"
+    ):
         # Get input image
         # input_img = self.preprocess_image()
         # Match output image
@@ -336,16 +393,9 @@ class DataManagement:
         # out_img = self.preprocess_image(glob.find.image(out_name))
         # Return pairwise training set
         # return (input_img, out_img)
-        # TODO - Is this line ok ?
-        files = [
-            os.path.join(self.compressed_data_path, f)
-            for f in os.listdir(self.compressed_data_path)
-        ]
-        # if not self.input_dims:
         self.input_dims.update({"dims": self.get_input_dims()})
         while True:
             # Select files for the batch
-            # This may not work
             batch_paths = np.random.choice(a=files, size=batch_size)
             batch_input = list()
             batch_output = list()
@@ -355,8 +405,63 @@ class DataManagement:
                 input = self.preprocess_image(input_img, precision, **self.input_dims)
 
                 file_name = os.path.basename(input_img).split("_")[0]
-                file_path = os.path.join(self.original_data_path, f"{file_name}.png")
+                file_path = os.path.join(
+                    self.original_data_path, f"{file_name}.{file_type}"
+                )
                 output = self.preprocess_image(file_path, precision, **self.input_dims)
+
+                batch_input.append(input)
+                batch_output.append(output)
+
+            # Return a tuple of (input, output) to feed network
+            batch_x = np.asarray(batch_input, dtype=precision)
+            batch_y = np.asarray(batch_output, dtype=precision)
+
+            # return batch_x, batch_y
+            yield batch_x, batch_y
+
+    def video_generator(
+        self, files, batch_size=4, precision="float32", file_type="y4m"
+    ):
+        while True:
+            # Select files for the batch
+            batch_paths = np.random.choice(a=files, size=batch_size)
+            batch_input = list()
+            batch_output = list()
+
+            # Read in each input, perform pre-processing and get labels (original images)
+            for input_video in batch_paths:
+                # Load video
+                cap = self.load_video(input_video)
+                # cap = cv2.VideoCapture(input_video)
+                # if not cap.isOpened():
+                #     raise UserWarning("Cannot read video, is codec installed?")
+                # Randomly gather self.frames consecutive frames
+                metadata = self.video_metadata(cap)
+                # TODO - Handle blank before / after frames
+                start_frame = int(
+                    np.random.choice(a=metadata.get("frames") - self.frames, size=1)
+                )
+                frames = np.arange(start_frame, start_frame + self.frames)
+                # for i in frames:
+                #     ret, frame = cap.get(i)
+                #     if not ret:
+                #         raise UserWarning(f"Frame {i} not found!")
+                input = self.preprocess_video(
+                    cap, precision, get_frames=frames, **self.input_dims
+                )
+                cap.release()
+                # Repeat for output
+                file_name = os.path.basename(input_video).split(f".mp4")[0]
+                file_path = os.path.join(
+                    self.original_data_path, f"{file_name}.{file_type}"
+                )
+
+                cap = self.load_video(file_path)
+                output = self.preprocess_video(
+                    cap, precision, get_frames=frames, **self.input_dims
+                )
+                cap.release()
 
                 batch_input.append(input)
                 batch_output.append(output)

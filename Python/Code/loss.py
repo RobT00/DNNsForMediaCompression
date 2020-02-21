@@ -75,6 +75,22 @@ def tf_ms_ssim(y_true, y_pred, max_val=1.0):
     )
 
 
+def tf_ms_ssim_vid(y_true, y_pred, max_val=1.0):
+    """
+    Implementation of Multi-Scale Structural Similarity for a frame in a sequence
+    :param y_true: Ground Truth sequence
+    :param y_pred: Predicted sequence
+    :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
+    :return: MS-SSIM, result is negated in order to minimise loss (maximise MS-SIM)
+    """
+    frames = y_pred.shape[1] if y_pred.shape[1] else 5
+    mid_frame = int(frames / 2)
+    # [batch_size, frames, height, width, channels]
+    return tf_ms_ssim(
+        y_true[:, mid_frame, ...], y_pred[:, mid_frame, ...], max_val=max_val
+    )
+
+
 def psnr_loss(y_true, y_pred):
     """
     PSNR is Peek Signal to Noise Ratio, which is similar to mean squared error.

@@ -89,7 +89,7 @@ class ModelClass:
         y_train=None,
         y_val=None,
         generator=False,
-        run_epochs=10,
+        run_epochs=100,
         batch_size=2,
         util_class=None,
         **kwargs,
@@ -101,7 +101,20 @@ class ModelClass:
         cb_patience = int(run_epochs * 0.15)
         cb = [
             EarlyStopping(
-                verbose=True, patience=cb_patience, monitor="val_tf_ssim", mode="min"
+                verbose=True, patience=cb_patience, monitor="val_mse", mode="min"
+            )
+        ]
+        cb += [
+            ReduceLROnPlateau(
+                monitor="val_mse",
+                factor=0.1,
+                patience=cb_patience,
+                verbose=0,
+                mode="min",
+                min_delta=1e-4,
+                cooldown=0,
+                min_lr=0,
+                **kwargs,
             )
         ]
         # "val_tf_psnr"
@@ -111,8 +124,10 @@ class ModelClass:
 
         if generator:
             # TODO - Alter max_queue_size ?
+            # TODO - Use validation
+            files, gen_function = util_class.generator_function()
             history = model.fit_generator(
-                util_class.generator_function(batch_size=batch_size, **kwargs),
+                gen_function(files, batch_size=batch_size, **kwargs),
                 steps_per_epoch=144 // batch_size,  # Hardcoded --> 144 images in /Test
                 epochs=run_epochs,
                 verbose=2,
