@@ -98,7 +98,7 @@ class ModelClass:
         y_train=None,
         y_val=None,
         generator=False,
-        run_epochs=500,
+        run_epochs=1,
         batch_size=2,
         util_class=None,
         **kwargs,

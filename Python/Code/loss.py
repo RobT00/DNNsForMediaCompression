@@ -60,17 +60,19 @@ def tf_ssim(y_true, y_pred, max_val=1.0):
     return -(tf.dtypes.cast(tf.image.ssim(y_pred, y_true, max_val), dtype=K.floatx()))
 
 
-def tf_ms_ssim(y_true, y_pred, max_val=1.0):
+def tf_ms_ssim(y_true, y_pred, max_val=1.0, filter_size=11):
     """
     Tensorflow implementation of Multi-Scale Structural Similarity
     :param y_true: Ground Truth
     :param y_pred: Predicted label
     :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
+    :param filter_size: Size of Gaussian filter
     :return: MS-SSIM, result is negated in order to minimise loss (maximise MS-SIM)
     """
     return -(
         tf.dtypes.cast(
-            tf.image.ssim_multiscale(y_pred, y_true, max_val), dtype=K.floatx()
+            tf.image.ssim_multiscale(y_pred, y_true, max_val, filter_size=filter_size),
+            dtype=K.floatx(),
         )
     )
 
@@ -87,7 +89,10 @@ def tf_ms_ssim_vid(y_true, y_pred, max_val=1.0):
     mid_frame = int(frames / 2)
     # [batch_size, frames, height, width, channels]
     return tf_ms_ssim(
-        y_true[:, mid_frame, ...], y_pred[:, mid_frame, ...], max_val=max_val
+        y_true[:, mid_frame, ...],
+        y_pred[:, mid_frame, ...],
+        max_val=max_val,
+        filter_size=3,
     )
 
 
