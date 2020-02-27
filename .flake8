@@ -1,6 +1,7 @@
 [flake8]
-ignore = F401
+ignore = F401, W605
 # ignore = F
+# W605: Allow \X in regex
 
 ## From CS7CS4
 # To avoid issues with Black's line lengths

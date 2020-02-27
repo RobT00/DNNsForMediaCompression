@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 import cv2
+import re
 from timeit import default_timer as timer  # Measured in seconds
 
 
@@ -121,6 +122,7 @@ class DataManagement:
         # cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)
         vid = list()
         # TODO - Use all frames
+        # TODO - Add noise
         num_frames_1 = get_frames if get_frames is not None else range(int(self.frames))
         # for i in tqdm(num_frames_1, position=0, leave=True):
         for i in num_frames_1:
@@ -154,7 +156,7 @@ class DataManagement:
         """
         video = cv2.VideoCapture(video_path)
         if not video.isOpened():
-            raise UserWarning("Cannot read video, is codec installed?")
+            raise UserWarning(f"Cannot read video at {video_path}\nIs codec installed?")
 
         return video
 
@@ -198,24 +200,24 @@ class DataManagement:
         # TODO - Crop images, resize
         # i_height, i_width, i_channels = image.shape
         if not check_ok(image.shape, desired_dims):
-            # if width != i_width:
-            #     if height == i_width:
-            #         # image = image.reshape([i_width, i_height, i_channels])
-            #         image = np.rot90(image)
-            #         i_width, i_height, i_channels = image.shape
-            # if i_channels != channels:
-            #     image = image.reshape([i_height, i_width, channels])
             if image.shape[0] != desired_dims[0]:
                 if image.shape[1] == desired_dims[0]:
                     image = np.rot90(image)
             if image.shape[2] != desired_dims[2]:
                 image = image.reshape([image.shape[0], image.shape[1], desired_dims[2]])
             if not check_ok(image.shape, desired_dims):
-                raise ValueError(
-                    "Image: {} doesn't match desired dimensions: {}".format(
-                        image.shape, desired_dims
+                try:
+                    image = cv2.resize(
+                        image,
+                        (desired_dims[0], desired_dims[1]),
+                        interpolation=cv2.INTER_AREA,
                     )
-                )
+                except ValueError:
+                    raise ValueError(
+                        "Image: {} doesn't match desired dimensions: {}".format(
+                            image.shape, desired_dims
+                        )
+                    )
 
         return image
 
@@ -351,7 +353,8 @@ class DataManagement:
         if self.sequences:
             # Add number of frames
             # d = self.input_dims.get("dims", (144, 176, 3))
-            d = self.input_dims.get("dims", (288, 352, 3))
+            # d = self.input_dims.get("dims", (288, 352, 3))
+            d = self.input_dims.get("dims", (48, 48, 3))
             d = (self.frames,) + d  # Frames first
             # d = (None,) + d  # Unspecified number of frames
             # d += (300,)  # Frames last
@@ -360,17 +363,26 @@ class DataManagement:
             d = self.input_dims.get("dims", (512, 768, 3))
         return d
 
-    def generator_function(self):
+    def generator_function(self, validate=True, split=0.2):
         files = [
             os.path.join(self.compressed_data_path, f)
             for f in os.listdir(self.compressed_data_path)
         ]
+        if validate:
+            np.random.shuffle(files)
+            split_size = int(len(files) * split)
+            train_files = files[:-split_size]
+            validate_files = files[-split_size:]
+            # files = (train_files, validate_files)
+        else:
+            train_files = files
+            validate_files = None
         # if not self.input_dims:
         if self.sequences:
             function = self.video_generator
         else:
             function = self.image_generator
-        return files, function
+        return train_files, validate_files, function
 
     def image_generator(
         self, files, batch_size=42, precision="float32", file_type="png"
@@ -423,6 +435,9 @@ class DataManagement:
     def video_generator(
         self, files, batch_size=4, precision="float32", file_type="y4m"
     ):
+        # TODO - Add noise
+        dims = self.get_input_dims()
+        self.input_dims.update({"dims": dims[1:]})
         while True:
             # Select files for the batch
             batch_paths = np.random.choice(a=files, size=batch_size)
@@ -452,7 +467,11 @@ class DataManagement:
                 )
                 cap.release()
                 # Repeat for output
-                file_name = os.path.basename(input_video).split(f".mp4")[0]
+                re_exp = "(_\d+\.mp4$)"
+                # base_file = os.path.basename(input_video)
+                # file_name = base_file.strip(re_exp.findall(base_file)[0])
+                file_name = self.get_base_filename(input_video, re_exp)
+                # file_name = os.path.basename(input_video).split(f".mp4")[0]
                 file_path = os.path.join(
                     self.original_data_path, f"{file_name}.{file_type}"
                 )
@@ -474,6 +493,20 @@ class DataManagement:
             yield batch_x, batch_y
 
     @staticmethod
+    def get_base_filename(full_name, file_regex):
+        """
+        Helper function to retrieve a base file name for matching training and label data
+        :param full_name: Path to training file
+        :param file_regex: Regex to remove from training file to get match
+        :return:
+        """
+        re_exp = re.compile(file_regex)
+        base_file = os.path.basename(full_name)
+        base_filename = base_file.strip(re_exp.findall(base_file)[0])
+
+        return base_filename
+
+    @staticmethod
     def unique_file(dest_path):
         """
         Iterative increase the number on a file name to generate a unique file name
@@ -490,11 +523,12 @@ class DataManagement:
 
         return index + dest_path
 
-    def output_results(self, model, input_data, labels, **kwargs):
+    # def output_results(self, model, input_data, labels, **kwargs):
+    def output_results(self, model, *args, **kwargs):
         if self.sequences:
-            return self.output_results_videos(model, input_data, labels, **kwargs)
+            return self.output_results_videos(model, **kwargs)
         else:
-            return self.output_results_images(model, input_data, labels, **kwargs)
+            return self.output_results_images(model, *args, **kwargs)
 
     def output_results_images(
         self,
@@ -504,7 +538,7 @@ class DataManagement:
         training_data=None,
         precision="float32",
         loss_fn="MS-SSIM",
-        validation=True,
+        # validation=True,
     ):
         f_name = ""
         return_dir = os.getcwd()
@@ -527,11 +561,11 @@ class DataManagement:
                 np.asarray(training_data.history["loss"]) * -1.0,
                 label=f"{loss_fn} Training Loss",
             )
-            if validation:
-                plt.plot(
-                    np.asarray(training_data.history["val_loss"]) * -1.0,
-                    label=f"{loss_fn} Validation Loss",
-                )
+            # if validation:
+            plt.plot(
+                np.asarray(training_data.history["val_loss"]) * -1.0,
+                label=f"{loss_fn} Validation Loss",
+            )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
@@ -543,11 +577,11 @@ class DataManagement:
                 np.asarray(training_data.history["tf_psnr"]) * -1.0,
                 label="PSNR Training Loss",
             )
-            if validation:
-                plt.plot(
-                    np.asarray(training_data.history["val_tf_psnr"]) * -1.0,
-                    label="PSNR Validation Loss",
-                )
+            # if validation:
+            plt.plot(
+                np.asarray(training_data.history["val_tf_psnr"]) * -1.0,
+                label="PSNR Validation Loss",
+            )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
@@ -651,12 +685,12 @@ class DataManagement:
     def output_results_videos(
         self,
         model,
-        input_videos,
-        labels,
+        # input_videos,
+        # labels,
         training_data=None,
         precision="float32",
-        loss_fn="mse",
-        validation=True,
+        loss_fn="MS-SSIM",
+        # validation=True,
     ):
         f_name = ""
         return_dir = os.getcwd()
@@ -680,31 +714,30 @@ class DataManagement:
                 np.asarray(training_data.history["loss"]) * -1.0,
                 label=f"{loss_fn} Training Loss",
             )
-            if validation:
-                plt.plot(
-                    np.asarray(training_data.history["val_loss"]) * -1.0,
-                    label=f"{loss_fn} Validation Loss",
-                )
+            # if validation:
+            plt.plot(
+                np.asarray(training_data.history["val_loss"]) * -1.0,
+                label=f"{loss_fn} Validation Loss",
+            )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
             plt.legend()
             plt.title(f_name)
             # plt.show()
 
-            # fig_2 = plt.figure()
-            # plt.plot(
-            #     np.asarray(training_data.history["tf_psnr"]) * -1.0,
-            #     label="PSNR Training Loss",
-            # )
+            fig_2 = plt.figure()
+            plt.plot(
+                np.asarray(training_data.history["mse"]), label="MSE Training Loss"
+            )
             # if validation:
-            #     plt.plot(
-            #         np.asarray(training_data.history["val_tf_psnr"]) * -1.0,
-            #         label="PSNR Validation Loss",
-            #     )
-            # plt.xlabel("Epochs")
-            # plt.ylabel("Score")
-            # plt.legend()
-            # plt.title(f_name)
+            plt.plot(
+                np.asarray(training_data.history["val_mse"]),
+                label="MSE Validation Loss",
+            )
+            plt.xlabel("Epochs")
+            plt.ylabel("Score")
+            plt.legend()
+            plt.title(f_name)
 
             f_name += " metrics={} model={} precision={}".format(
                 ",".join(
@@ -726,7 +759,7 @@ class DataManagement:
             os.chdir(p_dir)
 
             fig_1.savefig(f"{loss_fn}.png")
-            # fig_2.savefig("PSNR.png")
+            fig_2.savefig("mse.png")
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
@@ -743,28 +776,61 @@ class DataManagement:
         output_time = 0.0
         i = 0  # So that i will always be defined
         num_videos = 0
-        if type(input_videos) is dict:
-            for compression_level, videos in input_videos.items():
-                for i, (t_im, o_im) in enumerate(
-                    # TODO - stop black adding whitespace before ':'
+        input_videos = os.listdir(self.compressed_data_path)
+        re_exp = r"(_\d+\.mp4$)"
+        qualities = sorted(
+            set(
+                [
                     # fmt: off
-                    zip(videos, labels[num_videos: len(videos) + num_videos]), start=1
+                    j[1: len(j) - len(".mp4")]
                     # fmt: on
-                ):
-                    output_time += self.output_helper_video(
-                        t_dir,
-                        t_im,
-                        o_im,
-                        model,
-                        output_append=[str(compression_level), str(i)],
-                    )
-                num_videos += i
-        else:
-            for i, (t_im, o_im) in enumerate(zip(input_videos, labels), start=1):
+                    for j in list(set([re.findall(re_exp, i)[0] for i in input_videos]))
+                ]
+            ),
+            reverse=True,
+        )
+        qualities = qualities[:3]  # get top 3
+        for quality in qualities:
+            match_string = f"_{quality}.mp4"
+            for i, video_file in enumerate(
+                glob.glob(self.compressed_data_path + f"/*{match_string}"), start=1
+            ):
+                base_name = self.get_base_filename(video_file, re_exp)
+                original_video = os.path.join(
+                    self.original_data_path, f"{base_name}.y4m"
+                )
                 output_time += self.output_helper_video(
-                    t_dir, t_im, o_im, model, output_append=str(i)
+                    t_dir,
+                    video_file,
+                    original_video,
+                    model,
+                    output_append=[f"crf={quality}", base_name],
+                    precision=precision,
                 )
             num_videos += i
+        # if type(input_videos) is dict:
+        #     # TODO - Match input and output
+        #     for compression_level, videos in input_videos.items():
+        #         for i, (t_im, o_im) in enumerate(
+        #             # TODO - stop black adding whitespace before ':'
+        #             # fmt: off
+        #             zip(videos, labels[num_videos: len(videos) + num_videos]), start=1
+        #             # fmt: on
+        #         ):
+        #             output_time += self.output_helper_video(
+        #                 t_dir,
+        #                 t_im,
+        #                 o_im,
+        #                 model,
+        #                 output_append=[str(compression_level), str(i)],
+        #             )
+        #         num_videos += i
+        # else:
+        #     for i, (t_im, o_im) in enumerate(zip(input_videos, labels), start=1):
+        #         output_time += self.output_helper_video(
+        #             t_dir, t_im, o_im, model, output_append=str(i)
+        #         )
+        #     num_videos += i
 
         os.chdir(return_dir)
 
@@ -778,6 +844,7 @@ class DataManagement:
         model,
         output_append=None,
         plot=False,
+        precision="float32",
     ):
         if type(output_append) is list:
             for appendage in output_append:
@@ -788,23 +855,69 @@ class DataManagement:
         os.makedirs(output_directory)
         os.chdir(output_directory)
 
-        train_video = np.expand_dims(input_video, axis=0)
+        # Load training video
+        train_video = self.load_video(input_video)
+        metadata = self.video_metadata(train_video)
+        # TODO - Handle blank before / after frames
+        num_frames = metadata.get("frames")
+        frames = np.arange(0, num_frames)
+        train_video = self.preprocess_video(
+            train_video, precision, get_frames=frames, **self.input_dims
+        )
+        total_time = 0
+        train_video = np.expand_dims(train_video, axis=0)
+        # Manually predict first 2 frames
         start = timer()
-        train_pred = model.predict(train_video)
+        frame_1_2 = model.predict(train_video[:, : self.frames])[:, :2][0]
         end = timer()
+        total_time += (end - start) * 1000
+        video_size = (num_frames,) + frame_1_2.shape[1:]
+        # (frames, height, width, channels)
+        predicted_frames = np.zeros(video_size, dtype=precision)
+        predicted_frames[:2] = frame_1_2
+
+        # TODO - Use np.delete() if memory issues ?
+        # Predict middle frames
+        # for i, video_section in enumerate(train_video[0, 2:-2], start=2):
+        for i in range(0, num_frames - (self.frames - 1)):
+            # print(f"i: {i}")
+            # print(f"i+frames: {i+self.frames}")
+            # # print(f"Predicting frame {int(i + 1 + self.frames / 2)} of {num_frames}\n")
+            # print(f"Predicting frame {int(i + 2 + self.frames / 2)} of {num_frames}\n")
+            start = timer()
+            # fmt: off
+            pred_frame = model.predict(train_video[:, i: i + self.frames])[:, 2]
+            # fmt: on
+            end = timer()
+            predicted_frames[i + 2] = pred_frame
+            total_time += (end - start) * 1000
+
+        # Manually predict last 3 frames
+        start = timer()
+        # fmt: off
+        frame_2_1 = model.predict(train_video[:, -self.frames:])[:, -2:][0]
+        # fmt: on
+        end = timer()
+        total_time += (end - start) * 1000
+        predicted_frames[-2:] = frame_2_1
         # save_img(
         #     "original.mp4",
         #     self.deprocess_image(np.expand_dims(original_video, axis=0), plot=plot),
         # )
-        self.deprocess_video(original_video, "original")
-        # save_img("compressed.mp4", self.deprocess_image(train_im, plot=plot))
         self.deprocess_video(train_video.squeeze(axis=0), "compressed")
-        # save_img("trained.mp4", self.deprocess_image(train_pred, plot=plot))
-        self.deprocess_video(train_pred.squeeze(axis=0), "trained")
 
-        return (end - start) * 1000
+        self.deprocess_video(predicted_frames, "trained")
 
-    def deprocess_video(self, video, file_name, file_format="avi", **kwargs):
+        original_video = self.load_video(original_video)
+        original_video = self.preprocess_video(
+            original_video, precision, get_frames=frames, **self.input_dims
+        )
+        original_video = np.asarray(original_video, dtype=precision)
+        self.deprocess_video(original_video, "original")
+
+        return total_time / num_frames
+
+    def deprocess_video(self, video, file_name, file_format="mp4", **kwargs):
         """
         Convert the video from a numpy array back to [0..255] for viewing / saving.
         :param video: Video as numpy array
@@ -819,7 +932,8 @@ class DataManagement:
 
         # initialise video writer
         # https://stackoverflow.com/questions/51914683/how-to-make-video-from-an-updating-numpy-array-in-python
-        fourcc = cv2.VideoWriter_fourcc("M", "J", "P", "G")
+        # fourcc = cv2.VideoWriter_fourcc("M", "J", "P", "G")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(file_name, fourcc, self.fps, (width, height))
 
         for frame in video:

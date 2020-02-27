@@ -5,6 +5,7 @@ flake8-bugbear
 numpy
 matplotlib
 keras
+regex
 scikit-learn
 opencv-python
 tqdm
