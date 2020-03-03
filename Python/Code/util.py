@@ -348,13 +348,15 @@ class DataManagement:
         return original_images
 
     def get_input_dims(self):
-        # TODO - Open an image/video at random, get metadata, but shape so that
+        # TODO - Use runtime arg ?
         # width > height
         if self.sequences:
             # Add number of frames
             # d = self.input_dims.get("dims", (144, 176, 3))
             # d = self.input_dims.get("dims", (288, 352, 3))
-            d = self.input_dims.get("dims", (48, 48, 3))
+            # d = self.input_dims.get("dims", (48, 48, 3))
+            # d = self.input_dims.get("dims", (128, 128, 3))
+            d = self.input_dims.get("dims", (256, 256, 3))
             d = (self.frames,) + d  # Frames first
             # d = (None,) + d  # Unspecified number of frames
             # d += (300,)  # Frames last
@@ -611,10 +613,8 @@ class DataManagement:
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
-            os.makedirs(m_dir)
-            os.chdir(m_dir)
 
-            model.save("{}.h5".format(model.name))
+            self.do_model_saving(model, m_dir)
         else:
             f_name += "loaded_model={} precision={}".format(model.name, precision)
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
@@ -727,11 +727,12 @@ class DataManagement:
 
             fig_2 = plt.figure()
             plt.plot(
-                np.asarray(training_data.history["mse"]), label="MSE Training Loss"
+                np.asarray(training_data.history["mean_squared_error"]),
+                label="MSE Training Loss",
             )
             # if validation:
             plt.plot(
-                np.asarray(training_data.history["val_mse"]),
+                np.asarray(training_data.history["val_mean_squared_error"]),
                 label="MSE Validation Loss",
             )
             plt.xlabel("Epochs")
@@ -763,10 +764,9 @@ class DataManagement:
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
-            os.makedirs(m_dir)
-            os.chdir(m_dir)
 
-            model.save("{}.h5".format(model.name))
+            self.do_model_saving(model, m_dir)
+
         else:
             f_name += "loaded_model={} precision={}".format(model.name, precision)
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
@@ -953,3 +953,16 @@ class DataManagement:
     @staticmethod
     def loaded_model(model):
         return type(model) == Model
+
+    @staticmethod
+    def do_model_saving(model, model_path):
+        os.makedirs(model_path)
+        os.chdir(model_path)
+
+        # TODO - Use try except (finally) on saving, for memory issues
+        # Save the whole model
+        model.save(f"{model.name}.h5")  # For Keras (TF 1.0)
+        model.save(f"{model.name}.tf")  # TF 2.0
+
+        # Save weights only
+        model.save_weights(f"{model.name}_weights.h5")
