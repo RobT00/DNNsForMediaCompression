@@ -98,8 +98,8 @@ class ModelClass:
         y_train=None,
         y_val=None,
         generator=False,
-        run_epochs=500,
-        batch_size=4,
+        run_epochs=200,
+        batch_size=8,
         util_class=None,
         **kwargs,
     ):
