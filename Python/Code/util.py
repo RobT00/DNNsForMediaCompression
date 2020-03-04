@@ -355,8 +355,8 @@ class DataManagement:
             # d = self.input_dims.get("dims", (144, 176, 3))
             # d = self.input_dims.get("dims", (288, 352, 3))
             # d = self.input_dims.get("dims", (48, 48, 3))
-            d = self.input_dims.get("dims", (128, 128, 3))
-            # d = self.input_dims.get("dims", (256, 256, 3))
+            # d = self.input_dims.get("dims", (128, 128, 3))
+            d = self.input_dims.get("dims", (256, 256, 3))
             d = (self.frames,) + d  # Frames first
             # d = (None,) + d  # Unspecified number of frames
             # d += (300,)  # Frames last
@@ -477,10 +477,10 @@ class DataManagement:
                 file_path = os.path.join(
                     self.original_data_path, f"{file_name}.{file_type}"
                 )
-
+                mid_frame = np.asarray([frames[len(frames) // 2]])
                 cap = self.load_video(file_path)
                 output = self.preprocess_video(
-                    cap, precision, get_frames=frames, **self.input_dims
+                    cap, precision, get_frames=mid_frame, **self.input_dims
                 )
                 cap.release()
 
