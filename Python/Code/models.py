@@ -99,7 +99,7 @@ class ModelClass:
         y_val=None,
         generator=False,
         run_epochs=200,
-        batch_size=8,
+        batch_size=4,
         util_class=None,
         **kwargs,
     ):
