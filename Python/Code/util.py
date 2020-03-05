@@ -698,11 +698,12 @@ class DataManagement:
         os.chdir(self.out_path)
         if training_data:
             # Create folder name based on params
-            f_name += "optimiser={} epochs={} batch_size={}".format(
+            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
                 # training_data.params["epochs"],
                 len(training_data.epoch),
                 training_data.params["batch_size"],
+                training_data.params["lr"],
             )
 
             # Create plots to save training records
@@ -737,7 +738,7 @@ class DataManagement:
             plt.legend()
             plt.title(f_name)
 
-            f_name += " metrics={} model={} precision={}".format(
+            f_name += "_metrics={}_model={}_precision={}".format(
                 ",".join(
                     [
                         i
@@ -764,7 +765,7 @@ class DataManagement:
 
             self.do_model_saving(model, m_dir)
         else:
-            f_name += "loaded_model={} precision={}".format(model.name, precision)
+            f_name += "loaded_model={}_precision={}".format(model.name, precision)
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
@@ -851,11 +852,12 @@ class DataManagement:
         os.chdir(self.out_path)
         if training_data:
             # Create folder name based on params
-            f_name += "optimiser={} epochs={} batch_size={}".format(
+            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
                 # training_data.params["epochs"],
                 len(training_data.epoch),
                 training_data.params["batch_size"],
+                training_data.params["lr"],
             )
 
             # Create plots to save training records
@@ -890,7 +892,7 @@ class DataManagement:
             plt.legend()
             plt.title(f_name)
 
-            f_name += " metrics={} model={} precision={}".format(
+            f_name += "_metrics={}_model={}_precision={}".format(
                 ",".join(
                     [
                         i
@@ -918,7 +920,7 @@ class DataManagement:
             self.do_model_saving(model, m_dir)
 
         else:
-            f_name += "loaded_model={} precision={}".format(model.name, precision)
+            f_name += "loaded_model={}_precision={}".format(model.name, precision)
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
