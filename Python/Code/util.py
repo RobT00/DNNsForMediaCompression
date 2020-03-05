@@ -844,6 +844,8 @@ class DataManagement:
         return_dir = os.getcwd()
         training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
         self.out_path = os.path.join(self.out_path, model.name, training_dims)
+        if "LowQual" in self.compressed_data_path.split(os.sep):
+            self.out_path = os.path.join(self.out_path, "LowQual")
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
         os.chdir(self.out_path)
