@@ -2,6 +2,7 @@
 File for all models, to be used by main.py
 """
 import os
+import ipykernel
 import numpy as np
 import datetime
 from keras import backend as K
@@ -33,6 +34,7 @@ from keras.layers import (
     concatenate,
     Reshape,
     Permute,
+    ConvLSTM2D,
 )
 from keras import regularizers
 from keras.callbacks import (
@@ -134,7 +136,6 @@ class ModelClass:
         start = timer()
 
         if generator:
-            # TODO - Alter max_queue_size ?
             test_files, val_files, gen_function = util_class.generator_function()
             if util_class.sequences:
                 epoch_steps = (len(test_files) * util_class.frames * 30) // batch_size
@@ -146,7 +147,7 @@ class ModelClass:
                 gen_function(test_files, batch_size=batch_size, **kwargs),
                 steps_per_epoch=epoch_steps,
                 epochs=run_epochs,
-                verbose=2,
+                verbose=1,
                 callbacks=cb,
                 validation_data=gen_function(
                     val_files, batch_size=batch_size, **kwargs
@@ -154,8 +155,8 @@ class ModelClass:
                 validation_steps=val_steps,
                 validation_freq=1,
                 class_weight=None,
-                max_queue_size=30,
-                workers=0,
+                max_queue_size=15,
+                workers=1,
                 use_multiprocessing=False,
                 shuffle=True,
                 initial_epoch=0,
@@ -168,7 +169,7 @@ class ModelClass:
                 batch_size=batch_size,
                 validation_data=(x_val, y_val),
                 shuffle=True,
-                verbose=2,
+                verbose=1,
                 callbacks=cb,
             )
 
@@ -834,41 +835,41 @@ class Attempt1_3D(ModelClass):
         self.name = "Attempt1_3D"
 
     def build(self):
-        x = Conv3D(filters=64, kernel_size=(1, 3, 3), activation="relu")(self.input)
-        x = ZeroPadding3D(padding=(0, 2, 2))(x)
-        x = Conv3D(filters=32, kernel_size=(1, 3, 3), activation="relu")(x)
-        x = MaxPooling3D(pool_size=(1, 2, 2))(x)
-        x = Conv3D(filters=64, kernel_size=(1, 3, 3), activation="tanh")(x)
-        x = Dropout(0.05)(x)
-        encode = Conv3D(filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2))(x)
+        conv1 = Conv3D(filters=64, kernel_size=(1, 3, 3), activation="relu")(self.input)
+        zpad1 = ZeroPadding3D(padding=(0, 2, 2))(conv1)
+        conv2 = Conv3D(filters=32, kernel_size=(1, 3, 3), activation="relu")(zpad1)
+        mpool1 = MaxPooling3D(pool_size=(1, 2, 2))(conv2)
+        conv3 = Conv3D(filters=64, kernel_size=(1, 3, 3), activation="tanh")(mpool1)
+        drop1 = Dropout(0.05)(conv3)
+        encode = Conv3D(filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2))(drop1)
 
         # model.add(Flatten())
-        x = UpSampling3D(size=(1, 2, 2))(encode)
-        x = Conv3DTranspose(
+        up1 = UpSampling3D(size=(1, 2, 2))(encode)
+        conv4 = Conv3DTranspose(
             filters=8, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
-        )(x)
-        x = Conv3DTranspose(
+        )(up1)
+        conv5 = Conv3DTranspose(
             filters=16,
             kernel_size=(1, 3, 3),
             strides=(1, 1, 1),
             padding="valid",
             kernel_regularizer=regularizers.l2(0.01),
-        )(x)
-        x = UpSampling3D(size=(1, 2, 2))(x)
-        x = Conv3DTranspose(
+        )(conv4)
+        up2 = UpSampling3D(size=(1, 2, 2))(conv5)
+        conv6 = Conv3DTranspose(
             filters=32, kernel_size=(1, 3, 3), strides=(1, 1, 1), padding="same"
-        )(x)
-        x = ZeroPadding3D(padding=(0, 2, 2))(x)
-        x = GaussianDropout(0.02)(x)
-        x = Conv3DTranspose(
+        )(up2)
+        zpad2 = ZeroPadding3D(padding=(0, 2, 2))(conv6)
+        drop2 = GaussianDropout(0.02)(zpad2)
+        conv7 = Conv3DTranspose(
             filters=16, kernel_size=(1, 3, 3), activation="relu", padding="same"
-        )(x)
-        x = Conv3DTranspose(
+        )(drop2)
+        conv8 = Conv3DTranspose(
             filters=8, kernel_size=(1, 5, 5), strides=(1, 1, 1), padding="same"
-        )(x)
+        )(conv7)
         decode = Conv3D(
             filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
-        )(x)
+        )(conv8)
 
         model = Model(self.input, decode)
 
@@ -1042,6 +1043,222 @@ class Attempt5(ModelClass):
         decode = Conv3D(
             filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
         )(conv10)
+
+        model = Model(self.input, decode)
+
+        model.name = self.name
+
+        return model
+
+
+class LSTM1(ModelClass):
+    """
+    Attempt1 (Attempt1_3D) architecture applied to LSTMs
+    """
+
+    def __init__(self, dims, precision="float32", **kwargs):
+        super().__init__(
+            dims, precision, **kwargs
+        )  # Is equivalent to super(Attempt1, self).__init__(dims)
+        self.name = "LSTM1"
+
+    def build(self):
+        frames = self.input.shape[1] if self.input.shape[1] else 5
+        mid_frame = int(frames / 2)
+        conv1 = ConvLSTM2D(
+            filters=64, kernel_size=(3, 3), activation="relu", return_sequences=True
+        )(self.input)
+        zpad1 = ZeroPadding3D(padding=(0, 2, 2))(conv1)
+        conv2 = ConvLSTM2D(
+            filters=32, kernel_size=(3, 3), activation="relu", return_sequences=True
+        )(zpad1)
+        mpool1 = MaxPooling3D(pool_size=(1, 2, 2))(conv2)
+        conv3 = ConvLSTM2D(
+            filters=64, kernel_size=(3, 3), activation="tanh", return_sequences=True
+        )(mpool1)
+        drop1 = Dropout(0.05)(conv3)
+        conv4 = ConvLSTM2D(
+            filters=8, kernel_size=(2, 2), strides=(2, 2), return_sequences=True
+        )(drop1)
+        # Get the 3rd frame
+        preceeding_frames = conv4[:, : (mid_frame + 1)]
+        encode = ConvLSTM2D(filters=3, kernel_size=(2, 2), return_sequences=False)(
+            preceeding_frames
+        )
+
+        up1 = UpSampling2D(size=(2, 2))(encode)
+        conv5 = Conv2DTranspose(
+            filters=8, kernel_size=2, strides=(2, 2), padding="valid"
+        )(up1)
+        conv6 = Conv2DTranspose(
+            filters=16,
+            kernel_size=3,
+            strides=(1, 1),
+            padding="valid",
+            kernel_regularizer=regularizers.l2(0.01),
+        )(conv5)
+        up2 = UpSampling2D(size=(2, 2))(conv6)
+        conv7 = Conv2DTranspose(
+            filters=32, kernel_size=3, strides=(1, 1), padding="same"
+        )(up2)
+        zpad2 = ZeroPadding2D(padding=(2, 2))(conv7)
+        drop2 = GaussianDropout(0.02)(zpad2)
+        conv8 = Conv2DTranspose(
+            filters=16, kernel_size=3, activation="relu", padding="same"
+        )(drop2)
+        conv9 = Conv2DTranspose(
+            filters=8, kernel_size=5, strides=(1, 1), padding="same"
+        )(conv8)
+        decode = Conv2D(filters=3, kernel_size=2, strides=(2, 2), padding="valid")(
+            conv9
+        )
+        # up1 = UpSampling2D(size=(2, 2))(encode)
+        # conv5 = Conv3DTranspose(
+        #     filters=8, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
+        # )(up1)
+        # conv6 = Conv3DTranspose(
+        #     filters=16,
+        #     kernel_size=(1, 3, 3),
+        #     strides=(1, 1, 1),
+        #     padding="valid",
+        #     kernel_regularizer=regularizers.l2(0.01),
+        # )(conv5)
+        # up2 = UpSampling3D(size=(1, 2, 2))(conv6)
+        # conv7 = Conv3DTranspose(
+        #     filters=32, kernel_size=(1, 3, 3), strides=(1, 1, 1), padding="same"
+        # )(up2)
+        # zpad2 = ZeroPadding3D(padding=(0, 2, 2))(conv7)
+        # drop2 = GaussianDropout(0.02)(zpad2)
+        # conv8 = Conv3DTranspose(
+        #     filters=16, kernel_size=(1, 3, 3), activation="relu", padding="same"
+        # )(drop2)
+        # conv9 = Conv3DTranspose(
+        #     filters=8, kernel_size=(1, 5, 5), strides=(1, 1, 1), padding="same"
+        # )(conv8)
+        # decode = Conv3D(
+        #     filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
+        # )(conv9)
+
+        model = Model(self.input, decode)
+
+        model.name = self.name
+
+        return model
+
+
+class LSTM2(ModelClass):
+    """
+    Attempt1 (Attempt1_3D) architecture applied to LSTMs, using forward and backward prediction
+    """
+
+    def __init__(self, dims, precision="float32", **kwargs):
+        super().__init__(
+            dims, precision, **kwargs
+        )  # Is equivalent to super(Attempt1, self).__init__(dims)
+        self.name = "LSTM2"
+
+    def build(self):
+        frames = self.input.shape[1] if self.input.shape[1] else 5
+        mid_frame = int(frames / 2)
+
+        # Input layer
+        conv1 = ConvLSTM2D(
+            filters=64, kernel_size=(3, 3), activation="relu", return_sequences=True
+        )(self.input)
+        zpad1 = ZeroPadding2D(padding=(2, 2))(conv1)
+        # Forward
+        forward_frames = zpad1[:, : (mid_frame + 1), ...]
+        conv2_1 = ConvLSTM2D(
+            filters=32, kernel_size=(3, 3), activation="relu", return_sequences=True
+        )(forward_frames)
+        mpool1_1 = MaxPooling2D(pool_size=(2, 2))(conv2_1)
+        conv3_1 = ConvLSTM2D(
+            filters=64, kernel_size=(3, 3), activation="tanh", return_sequences=True
+        )(mpool1_1)
+        drop1_1 = Dropout(0.05)(conv3_1)
+        conv4_1 = ConvLSTM2D(
+            filters=8, kernel_size=(2, 2), strides=(2, 2), return_sequences=False
+        )(drop1_1)
+        # Backward
+        backward_frames = zpad1[:, mid_frame:, ...]
+        conv2_2 = ConvLSTM2D(
+            filters=32,
+            kernel_size=(3, 3),
+            activation="relu",
+            return_sequences=True,
+            go_backwards=True,
+        )(backward_frames)
+        mpool1_2 = MaxPooling2D(pool_size=(2, 2))(conv2_2)
+        conv3_2 = ConvLSTM2D(
+            filters=64,
+            kernel_size=(3, 3),
+            activation="tanh",
+            return_sequences=True,
+            go_backwards=True,
+        )(mpool1_2)
+        drop1_2 = Dropout(0.05)(conv3_2)
+        conv4_2 = ConvLSTM2D(
+            filters=8,
+            kernel_size=(2, 2),
+            strides=(2, 2),
+            return_sequences=False,
+            go_backwards=True,
+        )(drop1_2)
+        # Get the 3rd frame
+        merge1 = concatenate([conv4_1, conv4_2], axis=4)
+        encode = Conv3D(filters=3, kernel_size=(2, 2, 2))(merge1)
+
+        up1 = UpSampling2D(size=(2, 2))(encode)
+        conv5 = Conv2DTranspose(
+            filters=8, kernel_size=2, strides=(2, 2), padding="valid"
+        )(up1)
+        conv6 = Conv2DTranspose(
+            filters=16,
+            kernel_size=3,
+            strides=(1, 1),
+            padding="valid",
+            kernel_regularizer=regularizers.l2(0.01),
+        )(conv5)
+        up2 = UpSampling2D(size=(2, 2))(conv6)
+        conv7 = Conv2DTranspose(
+            filters=32, kernel_size=3, strides=(1, 1), padding="same"
+        )(up2)
+        zpad2 = ZeroPadding2D(padding=(2, 2))(conv7)
+        drop2 = GaussianDropout(0.02)(zpad2)
+        conv8 = Conv2DTranspose(
+            filters=16, kernel_size=3, activation="relu", padding="same"
+        )(drop2)
+        conv9 = Conv2DTranspose(
+            filters=8, kernel_size=5, strides=(1, 1), padding="same"
+        )(conv8)
+        decode = Conv2D(filters=3, kernel_size=2, strides=(2, 2), padding="valid")(
+            conv9
+        )
+        # conv5 = Conv3DTranspose(
+        #     filters=8, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
+        # )(up1)
+        # conv6 = Conv3DTranspose(
+        #     filters=16,
+        #     kernel_size=(1, 3, 3),
+        #     strides=(1, 1, 1),
+        #     padding="valid",
+        #     kernel_regularizer=regularizers.l2(0.01),
+        # )(conv5)
+        # up2 = UpSampling3D(size=(1, 2, 2))(conv6)
+        # conv7 = Conv3DTranspose(
+        #     filters=32, kernel_size=(1, 3, 3), strides=(1, 1, 1), padding="same"
+        # )(up2)
+        # zpad2 = ZeroPadding3D(padding=(0, 2, 2))(conv7)
+        # drop2 = GaussianDropout(0.02)(zpad2)
+        # conv8 = Conv3DTranspose(
+        #     filters=16, kernel_size=(1, 3, 3), activation="relu", padding="same"
+        # )(drop2)
+        # conv9 = Conv3DTranspose(
+        #     filters=8, kernel_size=(1, 5, 5), strides=(1, 1, 1), padding="same"
+        # )(conv8)
+        # decode = Conv3D(
+        #     filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
+        # )(conv9)
 
         model = Model(self.input, decode)
 

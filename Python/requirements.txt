@@ -10,3 +10,4 @@ scikit-learn
 opencv-python
 tqdm
 setuptools>=41.0.0
+ipykernel

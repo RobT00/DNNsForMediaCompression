@@ -738,6 +738,13 @@ class DataManagement:
             plt.legend()
             plt.title(f_name)
 
+            fig_3 = plt.figure()
+            plt.plot(np.asarray(training_data.history["lr"]), label="Learning Rate")
+            plt.xlabel("Epochs")
+            plt.ylabel("Learning Rate")
+            plt.legend()
+            plt.title(f_name)
+
             f_name += "_metrics={}_model={}_precision={}".format(
                 ",".join(
                     [
@@ -759,6 +766,7 @@ class DataManagement:
 
             fig_1.savefig(f"{loss_fn}.png")
             fig_2.savefig("PSNR.png")
+            fig_3.savefig("lr.png")
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
@@ -844,9 +852,11 @@ class DataManagement:
         f_name = ""
         return_dir = os.getcwd()
         training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
-        self.out_path = os.path.join(self.out_path, model.name, training_dims)
+        encoder = self.compressed_data_path.split(os.sep)[-1]
+        self.out_path = os.path.join(self.out_path, model.name, encoder)
         if "LowQual" in self.compressed_data_path.split(os.sep):
             self.out_path = os.path.join(self.out_path, "LowQual")
+        self.out_path = os.path.join(self.out_path, training_dims)
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
         os.chdir(self.out_path)
@@ -892,6 +902,13 @@ class DataManagement:
             plt.legend()
             plt.title(f_name)
 
+            fig_3 = plt.figure()
+            plt.plot(np.asarray(training_data.history["lr"]), label="Learning Rate")
+            plt.xlabel("Epochs")
+            plt.ylabel("Learning Rate")
+            plt.legend()
+            plt.title(f_name)
+
             f_name += "_metrics={}_model={}_precision={}".format(
                 ",".join(
                     [
@@ -913,6 +930,7 @@ class DataManagement:
 
             fig_1.savefig(f"{loss_fn}.png")
             fig_2.savefig("mse.png")
+            fig_3.savefig("lr.png")
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
