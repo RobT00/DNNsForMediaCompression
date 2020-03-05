@@ -15,6 +15,7 @@ from keras_preprocessing.image import (
 from keras_applications.imagenet_utils import preprocess_input
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import ndimage
 import glob
 import cv2
 import re
@@ -39,19 +40,10 @@ class DataManagement:
         # )
         # self.test_datagen = ImageDataGenerator(rescale=None, dtype=precision)
 
-    def preprocess_image(
-        self,
-        image_path,
-        precision,
-        data_format="channels_first",
-        mode="div",
-        plot=False,
-        **dims,
-    ):
+    def preprocess_image(self, image_path, precision, mode=None, plot=False, **dims):
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param image_path: Path to image
-        :param data_format: Format to process image
         :param mode: Mode to process image
         :param precision: Precision for ndarray
         :param plot: Boolean - to plot image
@@ -61,10 +53,11 @@ class DataManagement:
         img = load_img(image_path)
         img = img_to_array(img, dtype=precision)
         img = self.check_dims(img, dims.get("dims", img.shape))
-        if mode == "div":
-            img /= 255.0
-        else:
-            img = preprocess_input(img, data_format=data_format, mode=mode)
+        # if mode == "div":
+        #     img /= 255.0
+        # else:
+        #     img = preprocess_input(img, data_format=data_format, mode=mode)
+        img = self.do_augmentation(mode, img)
         if plot:
             plt.figure()
             plt.imshow(img.astype(float))
@@ -73,19 +66,11 @@ class DataManagement:
         return img
 
     def preprocess_video(
-        self,
-        video_path,
-        precision,
-        data_format="channels_first",
-        mode="div",
-        plot=False,
-        get_frames=None,
-        **dims,
+        self, video_path, precision, mode=None, plot=False, get_frames=None, **dims
     ):
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param video_path: Path to video
-        :param data_format: Format to process image
         :param mode: Mode to process image
         :param precision: Precision for ndarray
         :param plot: Boolean - to plot image
@@ -121,23 +106,26 @@ class DataManagement:
         # Return to start
         # cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)
         vid = list()
-        # TODO - Use all frames
-        # TODO - Add noise
-        num_frames_1 = get_frames if get_frames is not None else range(int(self.frames))
+        frames = get_frames if get_frames is not None else range(int(self.frames))
         # for i in tqdm(num_frames_1, position=0, leave=True):
-        for i in num_frames_1:
+        for i in frames:
             cap.set(1, i)
             ret, frame = cap.read()
             # cv2.imshow('frame', frame)
             if not ret:
                 break
             # frame = img_to_array(frame, dtype=precision)  # Needed to infer precision
+            # TODO - Does RGB help ?
+            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert correct colour channels
+            # TODO Does YUV help ?
+            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)  # Convert to YUV
             frame = frame.astype(precision, copy=False)
             frame = self.check_dims(frame, dims.get("dims", frame.shape))
-            if mode == "div":
-                frame /= 255.0
-            else:
-                frame = preprocess_input(frame, data_format=data_format, mode=mode)
+            # if mode == "div":
+            #     frame /= 255.0
+            # else:
+            #     frame = preprocess_input(frame, data_format=data_format, mode=mode)
+            frame = self.do_augmentation(mode, frame)
             if plot:
                 plt.figure()
                 plt.imshow(frame.astype(float))
@@ -146,6 +134,150 @@ class DataManagement:
         cap.release()
 
         return vid
+
+    @staticmethod
+    def do_augmentation(aug_type: dict, img):
+        """
+        Function to do some augmentation to an image, to expand training
+        :param img: Input image
+        :param aug_type: Type of augmentation to perform, may be multiple
+        :return: Augmented image
+        """
+        precision = img.dtype
+
+        def add_noise(noise_typ, image):
+            # noisy = np.copy(image)
+            if noise_typ == "gaussian":
+                row, col, ch = image.shape
+                mean = 0
+                var = 0.1
+                sigma = var ** 0.5
+                gauss = np.random.normal(mean, sigma, (row, col, ch))
+                gauss = gauss.reshape(row, col, ch)
+                noisy = image + gauss
+            elif noise_typ == "s&p":
+                row, col, ch = image.shape
+                s_vs_p = 0.5
+                amount = 0.004
+                # Salt mode
+                num_salt = np.ceil(amount * image.size * s_vs_p)
+                coords = [
+                    np.random.randint(0, i - 1, int(num_salt)) for i in image.shape
+                ]
+                # image[coords] = 255.0
+                image[tuple(coords)] = 255.0
+
+                # Pepper mode
+                num_pepper = np.ceil(amount * image.size * (1.0 - s_vs_p))
+                coords = [
+                    np.random.randint(0, i - 1, int(num_pepper)) for i in image.shape
+                ]
+                # image[coords] = 0.0
+                image[tuple(coords)] = 0.0
+                noisy = image
+            elif noise_typ == "poisson":
+                vals = len(np.unique(image))
+                vals = 2 ** np.ceil(np.log2(vals))
+                noisy = np.random.poisson(image * vals) / float(vals)
+            elif noise_typ == "speckle":
+                row, col, ch = image.shape
+                gauss = np.random.randn(row, col, ch)
+                gauss = gauss.reshape(row, col, ch)
+                noisy = image + image * gauss
+            else:
+                noisy = image
+            return noisy
+
+        def rotate(degrees, image):
+            return ndimage.rotate(image, degrees, reshape=False)
+
+        def brightness(level, image):
+            return cv2.convertScaleAbs(image, alpha=level, beta=0)
+
+        def contrast(level, image):
+            return cv2.convertScaleAbs(image, alpha=1.0, beta=level)
+
+        if aug_type is not None:
+            for aug_name, aug in aug_type.items():
+                if "noise" in aug_name.lower():
+                    img = add_noise(aug, img)
+                elif "rotate" in aug_name.lower():
+                    img = rotate(aug, img)
+                elif "brightness" in aug_name.lower():
+                    img = brightness(aug, img)
+                elif "contrast" in aug_name.lower():
+                    img = contrast(aug, img)
+                # Ensure image limits and dtype after each pass
+                img = np.clip(img, 0.0, 255.0).astype(dtype=precision)
+        img /= 255.0
+
+        return img
+
+    @staticmethod
+    def get_augemntations() -> dict:
+        """
+        Using a random number generator, the augmentation(s) to be used are returned as a dictionary
+        :return: Dictionary containing augmentations to apply
+        """
+        noise_types = ["gaussian", "s&p", "poisson", "speckle"]
+        rotations = [
+            1,
+            5,
+            10,
+            15,
+            20,
+            30,
+            40,
+            45,
+            55,
+            60,
+            75,
+            90,
+            120,
+            150,
+            160,
+            180,
+            270,
+            290,
+        ]
+        brightness_values = [0.25, 0.5, 0.75, 0.85, 0.99, 1.01, 1.25, 1.5, 1.75, 2]
+        contrast_values = [1, 5, 10, 20, 25, 33, 42, 50, 60, 75, 85, 99]
+        augmentations = {
+            "noise": noise_types,
+            "rotate": rotations,
+            "brightness": brightness_values,
+            "contrast": contrast_values,
+        }
+
+        chosen_augmentations = dict()
+        num_range = 10000
+        num = np.random.choice(a=num_range)
+
+        if num < num_range / 2:  # 5000 / 5000
+            pass
+        else:  # 1250 / 1250 / 1250 / 1250
+            num -= num_range / 2
+            num_range /= 2
+            if num < num_range / 4:
+                num = 1
+            elif num < num_range / 2:
+                num = 2
+            elif num < num_range * 0.75:
+                num = 3
+            else:
+                num = 4
+            keys = np.random.choice(
+                a=list(augmentations.keys()),
+                replace=False,
+                size=num,
+                p=[0.265, 0.245, 0.245, 0.245],
+            )
+
+            for key in keys:
+                chosen_augment = np.random.choice(a=augmentations[key])
+                chosen_augmentations.update({key: chosen_augment})
+
+        return chosen_augmentations
 
     @staticmethod
     def load_video(video_path):
@@ -197,7 +329,6 @@ class DataManagement:
             """
             return image_dims == wanted_dims
 
-        # TODO - Crop images, resize
         # i_height, i_width, i_channels = image.shape
         if not check_ok(image.shape, desired_dims):
             if image.shape[0] != desired_dims[0]:
@@ -266,7 +397,7 @@ class DataManagement:
         for compression_level in range(1):
             for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
                 vid = self.preprocess_video(
-                    filename, precision, mode="div", plot=plot, **self.input_dims
+                    filename, precision, plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
                     self.input_dims.update({"dims": vid[0].shape})
@@ -290,7 +421,7 @@ class DataManagement:
                 # fmt: on
             ):
                 img = self.preprocess_image(
-                    filename, precision, mode="div", plot=plot, **self.input_dims
+                    filename, precision, plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
                     self.input_dims.update({"dims": img.shape})
@@ -317,7 +448,7 @@ class DataManagement:
         original_videos = list()
         for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
             vid = self.preprocess_video(
-                filename, precision, mode="div", plot=plot, **self.input_dims
+                filename, precision, plot=plot, **self.input_dims
             )
             if not self.input_dims:
                 self.input_dims.update({"dims": vid[0].shape})
@@ -335,7 +466,7 @@ class DataManagement:
         original_images = list()
         for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
             img = self.preprocess_image(
-                filename, precision, mode="div", plot=plot, **self.input_dims
+                filename, precision, plot=plot, **self.input_dims
             )
             if not self.input_dims:
                 self.input_dims.update({"dims": img.shape})
@@ -416,13 +547,22 @@ class DataManagement:
 
             # Read in each input, perform pre-processing and get labels (original images)
             for input_img in batch_paths:
-                input = self.preprocess_image(input_img, precision, **self.input_dims)
+                augment = self.get_augemntations()
+                input = self.preprocess_image(
+                    input_img, precision, mode=augment, **self.input_dims
+                )
 
                 file_name = os.path.basename(input_img).split("_")[0]
                 file_path = os.path.join(
                     self.original_data_path, f"{file_name}.{file_type}"
                 )
-                output = self.preprocess_image(file_path, precision, **self.input_dims)
+                if "rotate" in augment:
+                    augment = {"rotate": augment["rotate"]}
+                else:
+                    augment = None
+                output = self.preprocess_image(
+                    file_path, precision, mode=augment, **self.input_dims
+                )
 
                 batch_input.append(input)
                 batch_output.append(output)
@@ -437,7 +577,6 @@ class DataManagement:
     def video_generator(
         self, files, batch_size=4, precision="float32", file_type="y4m"
     ):
-        # TODO - Add noise
         dims = self.get_input_dims()
         self.input_dims.update({"dims": dims[1:]})
         while True:
@@ -448,6 +587,7 @@ class DataManagement:
 
             # Read in each input, perform pre-processing and get labels (original images)
             for input_video in batch_paths:
+                augment = self.get_augemntations()
                 # Load video
                 cap = self.load_video(input_video)
                 # cap = cv2.VideoCapture(input_video)
@@ -456,16 +596,14 @@ class DataManagement:
                 # Randomly gather self.frames consecutive frames
                 metadata = self.video_metadata(cap)
                 # TODO - Handle blank before / after frames
-                start_frame = int(
-                    np.random.choice(a=metadata.get("frames") - self.frames, size=1)
-                )
+                start_frame = np.random.choice(a=metadata.get("frames") - self.frames)
                 frames = np.arange(start_frame, start_frame + self.frames)
                 # for i in frames:
                 #     ret, frame = cap.get(i)
                 #     if not ret:
                 #         raise UserWarning(f"Frame {i} not found!")
                 input = self.preprocess_video(
-                    cap, precision, get_frames=frames, **self.input_dims
+                    cap, precision, get_frames=frames, mode=augment, **self.input_dims
                 )
                 cap.release()
                 # Repeat for output
@@ -479,8 +617,16 @@ class DataManagement:
                 )
                 mid_frame = np.asarray([frames[len(frames) // 2]])
                 cap = self.load_video(file_path)
+                if "rotate" in augment:
+                    augment = {"rotate": augment["rotate"]}
+                else:
+                    augment = None
                 output = self.preprocess_video(
-                    cap, precision, get_frames=mid_frame, **self.input_dims
+                    cap,
+                    precision,
+                    get_frames=mid_frame,
+                    mode=augment,
+                    **self.input_dims,
                 )
                 cap.release()
 
@@ -540,10 +686,12 @@ class DataManagement:
         training_data=None,
         precision="float32",
         loss_fn="MS-SSIM",
-        # validation=True,
+        **kwargs,
     ):
         f_name = ""
         return_dir = os.getcwd()
+        training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
+        self.out_path = os.path.join(self.out_path, model.name, training_dims)
         self.out_path = os.path.join(self.out_path, model.name)
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
@@ -690,17 +838,17 @@ class DataManagement:
         training_data=None,
         precision="float32",
         loss_fn="MS-SSIM",
-        # validation=True,
+        **kwargs,
     ):
         f_name = ""
         return_dir = os.getcwd()
-        self.out_path = os.path.join(self.out_path, model.name)
+        training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
+        self.out_path = os.path.join(self.out_path, model.name, training_dims)
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
         os.chdir(self.out_path)
         if training_data:
             # Create folder name based on params
-            # TODO - Mono or Colour
             f_name += "optimiser={} epochs={} batch_size={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
                 # training_data.params["epochs"],
@@ -808,29 +956,6 @@ class DataManagement:
                     precision=precision,
                 )
             num_videos += i
-        # if type(input_videos) is dict:
-        #     # TODO - Match input and output
-        #     for compression_level, videos in input_videos.items():
-        #         for i, (t_im, o_im) in enumerate(
-        #             # TODO - stop black adding whitespace before ':'
-        #             # fmt: off
-        #             zip(videos, labels[num_videos: len(videos) + num_videos]), start=1
-        #             # fmt: on
-        #         ):
-        #             output_time += self.output_helper_video(
-        #                 t_dir,
-        #                 t_im,
-        #                 o_im,
-        #                 model,
-        #                 output_append=[str(compression_level), str(i)],
-        #             )
-        #         num_videos += i
-        # else:
-        #     for i, (t_im, o_im) in enumerate(zip(input_videos, labels), start=1):
-        #         output_time += self.output_helper_video(
-        #             t_dir, t_im, o_im, model, output_append=str(i)
-        #         )
-        #     num_videos += i
 
         os.chdir(return_dir)
 
@@ -854,6 +979,7 @@ class DataManagement:
 
         os.makedirs(output_directory)
         os.chdir(output_directory)
+        # TODO - Mirror any BGR2RGB or BGR2YUV conversions here
 
         # Load training video
         train_video = self.load_video(input_video)

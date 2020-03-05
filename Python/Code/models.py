@@ -98,7 +98,7 @@ class ModelClass:
         y_train=None,
         y_val=None,
         generator=False,
-        run_epochs=200,
+        run_epochs=1,
         batch_size=4,
         util_class=None,
         **kwargs,
@@ -135,11 +135,10 @@ class ModelClass:
 
         if generator:
             # TODO - Alter max_queue_size ?
-            # TODO - Use validation
             test_files, val_files, gen_function = util_class.generator_function()
             if util_class.sequences:
-                epoch_steps = len(test_files) * util_class.frames
-                val_steps = len(val_files) * util_class.frames
+                epoch_steps = (len(test_files) * util_class.frames * 30) // batch_size
+                val_steps = (len(val_files) * util_class.frames * 30) // batch_size
             else:
                 epoch_steps = 144 // batch_size
                 val_steps = epoch_steps // batch_size
