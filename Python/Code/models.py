@@ -35,6 +35,7 @@ from keras.layers import (
     Reshape,
     Permute,
     ConvLSTM2D,
+    Lambda,
 )
 from keras import regularizers
 from keras.callbacks import (
@@ -44,7 +45,6 @@ from keras.callbacks import (
     ReduceLROnPlateau,
 )
 from sklearn.model_selection import train_test_split
-from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
 
 
@@ -205,6 +205,35 @@ class ModelClass:
             lr *= 1e-1
         print("Learning rate: ", lr)
         return lr
+
+    @staticmethod
+    def crop(dim, start, end, **kwargs):
+        """
+        Crops (or slices) a Tensor on a given dimension from start to end
+        example : to crop tensor x[:, :, 5:10]
+        :param dim: dimension to augment
+        :param start:
+        :param end:
+        :param kwargs: kwargs for further functionality
+        :return: Cropped tensor
+        """
+
+        def func(x):
+            dimension = dim
+            if dimension == -1:
+                dimension = len(x.shape) - 1
+            if dimension == 0:
+                return x[start:end]
+            if dimension == 1:
+                return x[:, start:end]
+            if dimension == 2:
+                return x[:, :, start:end]
+            if dimension == 3:
+                return x[:, :, :, start:end]
+            if dimension == 4:
+                return x[:, :, :, :, start:end]
+
+        return Lambda(func, **kwargs)
 
 
 class Attempt1(ModelClass):
@@ -1063,8 +1092,12 @@ class LSTM1(ModelClass):
         self.name = "LSTM1"
 
     def build(self):
-        frames = self.input.shape[1] if self.input.shape[1] else 5
+        frames = self.input.shape[1]
         mid_frame = int(frames / 2)
+        width = self.input.shape[3]
+        height = self.input.shape[2]
+        channels = self.input.shape[4]
+
         conv1 = ConvLSTM2D(
             filters=64, kernel_size=(3, 3), activation="relu", return_sequences=True
         )(self.input)
@@ -1080,11 +1113,14 @@ class LSTM1(ModelClass):
         conv4 = ConvLSTM2D(
             filters=8, kernel_size=(2, 2), strides=(2, 2), return_sequences=True
         )(drop1)
-        # Get the 3rd frame
-        preceeding_frames = conv4[:, : (mid_frame + 1)]
-        encode = ConvLSTM2D(filters=3, kernel_size=(2, 2), return_sequences=False)(
-            preceeding_frames
-        )
+        # Get first 3 frames
+        preceeding_frames = self.crop(1, 0, mid_frame + 1)(conv4)
+        # preceeding_frames_1 = Lambda(lambda x: conv4[:, : (mid_frame + 1)])(conv4)
+        # preceeding_frames_2 = Cropping3D(cropping=((0, mid_frame), (0, 0), (0, 0)))(conv4)
+        # Produce 'new' 3rd frame
+        encode = ConvLSTM2D(
+            filters=channels, kernel_size=(1, 1), return_sequences=False
+        )(preceeding_frames)
 
         up1 = UpSampling2D(size=(2, 2))(encode)
         conv5 = Conv2DTranspose(
@@ -1109,9 +1145,11 @@ class LSTM1(ModelClass):
         conv9 = Conv2DTranspose(
             filters=8, kernel_size=5, strides=(1, 1), padding="same"
         )(conv8)
-        decode = Conv2D(filters=3, kernel_size=2, strides=(2, 2), padding="valid")(
-            conv9
-        )
+        conv10 = Conv2D(
+            filters=channels, kernel_size=2, strides=(2, 2), padding="valid"
+        )(conv9)
+        # To get the output to agree with ndims
+        decode = Reshape(target_shape=(1, height, width, channels))(conv10)
         # up1 = UpSampling2D(size=(2, 2))(encode)
         # conv5 = Conv3DTranspose(
         #     filters=8, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
@@ -1158,20 +1196,23 @@ class LSTM2(ModelClass):
         self.name = "LSTM2"
 
     def build(self):
-        frames = self.input.shape[1] if self.input.shape[1] else 5
+        frames = self.input.shape[1]
         mid_frame = int(frames / 2)
+        width = self.input.shape[3]
+        height = self.input.shape[2]
+        channels = self.input.shape[4]
 
         # Input layer
         conv1 = ConvLSTM2D(
             filters=64, kernel_size=(3, 3), activation="relu", return_sequences=True
         )(self.input)
-        zpad1 = ZeroPadding2D(padding=(2, 2))(conv1)
+        zpad1 = ZeroPadding3D(padding=(0, 2, 2))(conv1)
         # Forward
-        forward_frames = zpad1[:, : (mid_frame + 1), ...]
+        forward_frames = self.crop(1, 0, mid_frame + 1)(zpad1)
         conv2_1 = ConvLSTM2D(
             filters=32, kernel_size=(3, 3), activation="relu", return_sequences=True
         )(forward_frames)
-        mpool1_1 = MaxPooling2D(pool_size=(2, 2))(conv2_1)
+        mpool1_1 = MaxPooling3D(pool_size=(1, 2, 2))(conv2_1)
         conv3_1 = ConvLSTM2D(
             filters=64, kernel_size=(3, 3), activation="tanh", return_sequences=True
         )(mpool1_1)
@@ -1179,8 +1220,10 @@ class LSTM2(ModelClass):
         conv4_1 = ConvLSTM2D(
             filters=8, kernel_size=(2, 2), strides=(2, 2), return_sequences=False
         )(drop1_1)
+        # target_shape = (1, conv4_1.shape[1], conv4_1.shape[2], conv4_1.shape[3])
+        # reshape_1 = Reshape(target_shape=target_shape)(conv4_1)
         # Backward
-        backward_frames = zpad1[:, mid_frame:, ...]
+        backward_frames = self.crop(1, mid_frame, -1)(zpad1)
         conv2_2 = ConvLSTM2D(
             filters=32,
             kernel_size=(3, 3),
@@ -1188,7 +1231,7 @@ class LSTM2(ModelClass):
             return_sequences=True,
             go_backwards=True,
         )(backward_frames)
-        mpool1_2 = MaxPooling2D(pool_size=(2, 2))(conv2_2)
+        mpool1_2 = MaxPooling3D(pool_size=(1, 2, 2))(conv2_2)
         conv3_2 = ConvLSTM2D(
             filters=64,
             kernel_size=(3, 3),
@@ -1204,9 +1247,12 @@ class LSTM2(ModelClass):
             return_sequences=False,
             go_backwards=True,
         )(drop1_2)
+        # target_shape = (1, conv4_2.shape[1], conv4_2.shape[2], conv4_2.shape[3])
+        # reshape_2 = Reshape(target_shape=target_shape)(conv4_1)
         # Get the 3rd frame
-        merge1 = concatenate([conv4_1, conv4_2], axis=4)
-        encode = Conv3D(filters=3, kernel_size=(2, 2, 2))(merge1)
+        merge1 = concatenate([conv4_1, conv4_2], axis=3)
+        # merge1 = concatenate([reshape_1, reshape_2], axis=4)
+        encode = Conv2D(filters=channels, kernel_size=(1, 1))(merge1)
 
         up1 = UpSampling2D(size=(2, 2))(encode)
         conv5 = Conv2DTranspose(
@@ -1231,9 +1277,11 @@ class LSTM2(ModelClass):
         conv9 = Conv2DTranspose(
             filters=8, kernel_size=5, strides=(1, 1), padding="same"
         )(conv8)
-        decode = Conv2D(filters=3, kernel_size=2, strides=(2, 2), padding="valid")(
-            conv9
-        )
+        conv10 = Conv2D(
+            filters=channels, kernel_size=2, strides=(2, 2), padding="valid"
+        )(conv9)
+        # To get the output to agree with ndims
+        decode = Reshape(target_shape=(1, height, width, channels))(conv10)
         # conv5 = Conv3DTranspose(
         #     filters=8, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
         # )(up1)

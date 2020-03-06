@@ -57,10 +57,14 @@ def tf_psnr_vid(y_true, y_pred, max_val=1.0):
     :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
     :return: PSNR, result is negated in order to minimise loss (maximise PSNR)
     """
-    frames = y_pred.shape[1] if y_pred.shape[1] else 5
-    mid_frame = int(frames / 2)
+    if len(y_pred.shape) > 4:
+        frames = y_pred.shape[1] if y_pred.shape[1] else 5
+        mid_frame = int(frames / 2)
+        pred_frame = y_pred[:, mid_frame, ...]
+    else:
+        pred_frame = y_pred
     # [batch_size, frames, height, width, channels]
-    return tf_psnr(y_true, y_pred[:, mid_frame, ...], max_val=max_val)
+    return tf_psnr(y_true, pred_frame, max_val=max_val)
 
 
 def tf_ssim(y_true, y_pred, max_val=1.0):
@@ -99,10 +103,14 @@ def tf_ms_ssim_vid(y_true, y_pred, max_val=1.0):
     :param max_val: Maximum value for pixel, 1.0 for scaled, 255 otherwise
     :return: MS-SSIM, result is negated in order to minimise loss (maximise MS-SIM)
     """
-    frames = y_pred.shape[1] if y_pred.shape[1] else 5
-    mid_frame = int(frames / 2)
+    if len(y_pred.shape) > 4:
+        frames = y_pred.shape[1] if y_pred.shape[1] else 5
+        mid_frame = int(frames / 2)
+        pred_frame = y_pred[:, mid_frame, ...]
+    else:
+        pred_frame = y_pred
     # [batch_size, frames, height, width, channels]
-    return tf_ms_ssim(y_true, y_pred[:, mid_frame, ...], max_val=max_val, filter_size=3)
+    return tf_ms_ssim(y_true, pred_frame, max_val=max_val, filter_size=3)
 
 
 def psnr_loss(y_true, y_pred):

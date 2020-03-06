@@ -486,8 +486,8 @@ class DataManagement:
             # d = self.input_dims.get("dims", (144, 176, 3))
             # d = self.input_dims.get("dims", (288, 352, 3))
             # d = self.input_dims.get("dims", (48, 48, 3))
-            # d = self.input_dims.get("dims", (128, 128, 3))
-            d = self.input_dims.get("dims", (256, 256, 3))
+            d = self.input_dims.get("dims", (128, 128, 3))
+            # d = self.input_dims.get("dims", (256, 256, 3))
             d = (self.frames,) + d  # Frames first
             # d = (None,) + d  # Unspecified number of frames
             # d += (300,)  # Frames last
@@ -596,6 +596,7 @@ class DataManagement:
                 # Randomly gather self.frames consecutive frames
                 metadata = self.video_metadata(cap)
                 # TODO - Handle blank before / after frames
+                # TODO - Fix for LSTM
                 start_frame = np.random.choice(a=metadata.get("frames") - self.frames)
                 frames = np.arange(start_frame, start_frame + self.frames)
                 # for i in frames:
