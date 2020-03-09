@@ -109,15 +109,11 @@ class ModelClass:
             x_train is None or x_val is None or y_train is None or y_val is None
         ):
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
-        cb_patience = min(int(run_epochs * 0.2), 150)
+
         monitor_metric = "mean_squared_error"
-        cb = [
-            EarlyStopping(
-                verbose=True, patience=cb_patience, monitor=monitor_metric, mode="min"
-            )
-        ]
+        cb = list()
         cb_patience = min(int(run_epochs * 0.15), 50)
-        cb += [
+        cb.append(
             ReduceLROnPlateau(
                 monitor=monitor_metric,
                 factor=0.1,
@@ -129,7 +125,18 @@ class ModelClass:
                 min_lr=0,
                 **kwargs,
             )
-        ]
+        )
+
+        if run_epochs > 100:
+            cb_patience = min(int(run_epochs * 0.2), 150)
+            cb.append(
+                EarlyStopping(
+                    verbose=True,
+                    patience=cb_patience,
+                    monitor=monitor_metric,
+                    mode="min",
+                )
+            )
         # "val_tf_psnr"
         # "val_loss" (MS-SSIM)
         print("Training")

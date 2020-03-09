@@ -400,7 +400,7 @@ class DataManagement:
                     filename, precision, plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
-                    self.input_dims.update({"dims": vid[0].shape})
+                    self.set_input_dims(vid[0].shape)
                 compressed_video.setdefault(compression_level, list()).append(vid)
 
         compressed_video_array = list()
@@ -424,7 +424,7 @@ class DataManagement:
                     filename, precision, plot=plot, **self.input_dims
                 )
                 if not self.input_dims:
-                    self.input_dims.update({"dims": img.shape})
+                    self.set_input_dims(img.shape)
                 compressed_images.setdefault(compression_level, list()).append(img)
 
         compressed_images_array = list()
@@ -451,7 +451,7 @@ class DataManagement:
                 filename, precision, plot=plot, **self.input_dims
             )
             if not self.input_dims:
-                self.input_dims.update({"dims": vid[0].shape})
+                self.set_input_dims(vid[0].shape)
             original_videos.append(vid)
 
         n = num_compressed_videos // len(original_videos)
@@ -469,7 +469,7 @@ class DataManagement:
                 filename, precision, plot=plot, **self.input_dims
             )
             if not self.input_dims:
-                self.input_dims.update({"dims": img.shape})
+                self.set_input_dims(img.shape)
             original_images.append(img)
 
         n = num_compressed_images // len(original_images)
@@ -496,6 +496,14 @@ class DataManagement:
             d = self.input_dims.get("dims", (512, 768, 3))
         return d
 
+    def set_input_dims(self, input_dims: tuple):
+        """
+        Helper method to set the input dims
+        :param input_dims: Tuple of dimensions for input to model
+        :return: Updates class with input doms
+        """
+        self.input_dims.update({"dims": input_dims})
+
     def generator_function(self, validate=True, split=0.2):
         files = [
             os.path.join(self.compressed_data_path, f)
@@ -510,7 +518,6 @@ class DataManagement:
         else:
             train_files = files
             validate_files = None
-        # if not self.input_dims:
         if self.sequences:
             function = self.video_generator
         else:
@@ -578,7 +585,7 @@ class DataManagement:
         self, files, batch_size=4, precision="float32", file_type="y4m"
     ):
         dims = self.get_input_dims()
-        self.input_dims.update({"dims": dims[1:]})
+        self.set_input_dims(dims[1:])
         while True:
             # Select files for the batch
             batch_paths = np.random.choice(a=files, size=batch_size)
@@ -596,7 +603,6 @@ class DataManagement:
                 # Randomly gather self.frames consecutive frames
                 metadata = self.video_metadata(cap)
                 # TODO - Handle blank before / after frames
-                # TODO - Fix for LSTM
                 start_frame = np.random.choice(a=metadata.get("frames") - self.frames)
                 frames = np.arange(start_frame, start_frame + self.frames)
                 # for i in frames:
@@ -691,13 +697,13 @@ class DataManagement:
     ):
         f_name = ""
         return_dir = os.getcwd()
-        training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
-        self.out_path = os.path.join(self.out_path, model.name, training_dims)
-        self.out_path = os.path.join(self.out_path, model.name)
-        if not os.path.exists(self.out_path):
-            os.makedirs(self.out_path)
-        os.chdir(self.out_path)
         if training_data:
+            training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
+            self.out_path = os.path.join(self.out_path, model.name, training_dims)
+            self.out_path = os.path.join(self.out_path, model.name)
+            if not os.path.exists(self.out_path):
+                os.makedirs(self.out_path)
+            os.chdir(self.out_path)
             # Create folder name based on params
             f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
@@ -774,7 +780,8 @@ class DataManagement:
 
             self.do_model_saving(model, m_dir)
         else:
-            f_name += "loaded_model={}_precision={}".format(model.name, precision)
+            # f_name += "loaded_model={}_precision={}".format(model.name, precision)
+            f_name += "loaded_model"
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
@@ -852,16 +859,16 @@ class DataManagement:
     ):
         f_name = ""
         return_dir = os.getcwd()
-        training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
-        encoder = self.compressed_data_path.split(os.sep)[-1]
-        self.out_path = os.path.join(self.out_path, model.name, encoder)
-        if "LowQual" in self.compressed_data_path.split(os.sep):
-            self.out_path = os.path.join(self.out_path, "LowQual")
-        self.out_path = os.path.join(self.out_path, training_dims)
-        if not os.path.exists(self.out_path):
-            os.makedirs(self.out_path)
-        os.chdir(self.out_path)
         if training_data:
+            training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
+            encoder = self.compressed_data_path.split(os.sep)[-1]
+            self.out_path = os.path.join(self.out_path, model.name, encoder)
+            if "LowQual" in self.compressed_data_path.split(os.sep):
+                self.out_path = os.path.join(self.out_path, "LowQual")
+            self.out_path = os.path.join(self.out_path, training_dims)
+            if not os.path.exists(self.out_path):
+                os.makedirs(self.out_path)
+            os.chdir(self.out_path)
             # Create folder name based on params
             f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
@@ -939,7 +946,8 @@ class DataManagement:
             self.do_model_saving(model, m_dir)
 
         else:
-            f_name += "loaded_model={}_precision={}".format(model.name, precision)
+            # f_name += "loaded_model={}_precision={}".format(model.name, precision)
+            f_name += "loaded_model"
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
@@ -1003,7 +1011,7 @@ class DataManagement:
         os.makedirs(output_directory)
         os.chdir(output_directory)
         # TODO - Mirror any BGR2RGB or BGR2YUV conversions here
-
+        # TODO - Fix for LSTM
         # Load training video
         train_video = self.load_video(input_video)
         metadata = self.video_metadata(train_video)
@@ -1095,8 +1103,8 @@ class DataManagement:
     def get_model_from_string(classname):
         return getattr(sys.modules[__name__].models, classname)
 
-    @staticmethod
-    def load_model_from_path(model_path):
+    def load_model_from_path(self, model_path):
+        self.out_path = os.sep.join(model_path.split(os.sep)[:-2])
         return load_model(model_path, compile=False)
 
     @staticmethod
