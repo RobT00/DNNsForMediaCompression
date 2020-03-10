@@ -44,6 +44,9 @@ from keras.callbacks import (
     LearningRateScheduler,
     ReduceLROnPlateau,
 )
+import tensorflow as tf
+import tensorflow_addons as tfa
+from tensorflow_addons.callbacks import TimeStopping
 from sklearn.model_selection import train_test_split
 from keras.preprocessing.image import ImageDataGenerator
 
@@ -110,6 +113,8 @@ class ModelClass:
         ):
             x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
 
+        verbosity = 1
+        max_time_seconds = int(60 * 60 * 16.5)
         monitor_metric = "mean_squared_error"
         cb = list()
         cb_patience = min(int(run_epochs * 0.15), 50)
@@ -137,6 +142,7 @@ class ModelClass:
                     mode="min",
                 )
             )
+        cb.append(TimeStopping(seconds=max_time_seconds, verbose=verbosity))
         # "val_tf_psnr"
         # "val_loss" (MS-SSIM)
         print("Training")
@@ -154,7 +160,7 @@ class ModelClass:
                 gen_function(test_files, batch_size=batch_size, **kwargs),
                 steps_per_epoch=epoch_steps,
                 epochs=run_epochs,
-                verbose=1,
+                verbose=verbosity,
                 callbacks=cb,
                 validation_data=gen_function(
                     val_files, batch_size=batch_size, **kwargs
@@ -176,7 +182,7 @@ class ModelClass:
                 batch_size=batch_size,
                 validation_data=(x_val, y_val),
                 shuffle=True,
-                verbose=1,
+                verbose=verbosity,
                 callbacks=cb,
             )
 

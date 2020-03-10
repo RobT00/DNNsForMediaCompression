@@ -118,7 +118,13 @@ class DataManagement:
             ret, frame = cap.read()
             # cv2.imshow('frame', frame)
             if not ret:
-                break
+                if get_frames is not None:
+                    frame = np.copy(vid[-1])
+                    frame.fill(0)
+                else:
+                    break
+            if i < 0:
+                frame.fill(0)
             # frame = img_to_array(frame, dtype=precision)  # Needed to infer precision
             # TODO - Does RGB help ?
             # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert correct colour channels
@@ -765,13 +771,15 @@ class DataManagement:
             m_dir = os.path.join(out_path, "Model")
 
             self.do_model_saving(model, m_dir)
+
+            t_dir = os.path.join(out_path, "Training")
         else:
             # f_name += "loaded_model={}_precision={}".format(model.name, self.precision)
             f_name += "loaded_model"
-            out_path = os.path.join(self.out_path, self.unique_file(f_name))
+            os.chdir(self.out_path)
+            t_dir = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
-        t_dir = os.path.join(out_path, "Training")
         output_time = 0.0
         i = 0  # So that i will always be defined
         num_images = 0
@@ -798,9 +806,16 @@ class DataManagement:
                 )
             num_images += i
 
+        avg_time = timedelta(milliseconds=output_time / num_images)
+
+        os.chdir(t_dir)
+        with open("avg_time.txt", "a") as out_file:
+            out_file.write(f"compressed_path: {self.compressed_data_path}\n")
+            out_file.write(f"Average time to predict: {avg_time}")
+
         os.chdir(return_dir)
 
-        return timedelta(milliseconds=output_time / num_images)
+        return avg_time
 
     def output_helper_images(
         self,
@@ -930,13 +945,14 @@ class DataManagement:
 
             self.do_model_saving(model, m_dir)
 
+            t_dir = os.path.join(out_path, "Training")
         else:
             # f_name += "loaded_model={}_precision={}".format(model.name, self.precision)
             f_name += "loaded_model"
-            out_path = os.path.join(self.out_path, self.unique_file(f_name))
+            os.chdir(self.out_path)
+            t_dir = os.path.join(self.out_path, self.unique_file(f_name))
 
         # Save sample training and validation images
-        t_dir = os.path.join(out_path, "Training")
         output_time = 0.0
         i = 0  # So that i will always be defined
         num_videos = 0
@@ -972,9 +988,16 @@ class DataManagement:
                 )
             num_videos += i
 
+        avg_time = timedelta(milliseconds=output_time / num_videos)
+
+        os.chdir(t_dir)
+        with open("avg_time.txt", "a") as out_file:
+            out_file.write(f"compressed_path: {self.compressed_data_path}\n")
+            out_file.write(f"Average time to predict: {avg_time}")
+
         os.chdir(return_dir)
 
-        return timedelta(milliseconds=output_time / num_videos)
+        return avg_time
 
     def output_helper_video(
         self,
@@ -998,51 +1021,62 @@ class DataManagement:
         # Load training video
         train_video = self.load_video(input_video)
         metadata = self.video_metadata(train_video)
-        # TODO - Handle blank before / after frames
         num_frames = metadata.get("frames")
-        frames = np.arange(0, num_frames)
+        mid_frame = int(self.frames / 2)
+        frames = np.arange(-mid_frame, num_frames + mid_frame)
         # train_video = self.preprocess_video(
         #     train_video, precision, get_frames=frames, **self.input_dims
         # )
         train_video = self.preprocess_video(
             train_video, get_frames=frames, **self.input_dims
         )
-        total_time = 0
+        total_time = 0.0
         train_video = np.expand_dims(train_video, axis=0)
-        # Manually predict first 2 frames
-        start = timer()
-        frame_1_2 = model.predict(train_video[:, : self.frames])[:, :2][0]
-        end = timer()
-        total_time += (end - start) * 1000
-        video_size = (num_frames,) + frame_1_2.shape[1:]
+        video_size = (num_frames,) + self.input_dims["dims"]
         # (frames, height, width, channels)
         predicted_frames = np.zeros(video_size, dtype=self.precision)
-        predicted_frames[:2] = frame_1_2
 
-        # TODO - Use np.delete() if memory issues ?
-        # Predict middle frames
-        # for i, video_section in enumerate(train_video[0, 2:-2], start=2):
-        for i in range(0, num_frames - (self.frames - 1)):
-            # print(f"i: {i}")
-            # print(f"i+frames: {i+self.frames}")
-            # # print(f"Predicting frame {int(i + 1 + self.frames / 2)} of {num_frames}\n")
-            # print(f"Predicting frame {int(i + 2 + self.frames / 2)} of {num_frames}\n")
+        for i in range(num_frames):
             start = timer()
-            # fmt: off
-            pred_frame = model.predict(train_video[:, i: i + self.frames])[:, 2]
-            # fmt: on
+            pred_frame = model.predict(train_video[:, i : i + self.frames])
             end = timer()
-            predicted_frames[i + 2] = pred_frame
+            frames_predicted = pred_frame.shape[1]
+            if frames_predicted > 1:
+                # Not LSTM, multiple output
+                pred_frame = pred_frame[:, int(frames_predicted / 2)]
+            predicted_frames[i] = pred_frame
             total_time += (end - start) * 1000
+        # Manually predict first 2 frames
+        # frame_1_2 = model.predict(train_video[:, : self.frames])[:, :2][0]
+        # video_size = (num_frames,) + frame_1_2.shape[1:]
+        # # (frames, height, width, channels)
+        # predicted_frames = np.zeros(video_size, dtype=self.precision)
+        # predicted_frames[:2] = frame_1_2
 
-        # Manually predict last 3 frames
-        start = timer()
-        # fmt: off
-        frame_2_1 = model.predict(train_video[:, -self.frames:])[:, -2:][0]
-        # fmt: on
-        end = timer()
-        total_time += (end - start) * 1000
-        predicted_frames[-2:] = frame_2_1
+        # # TODO - Use np.delete() if memory issues ?
+        # # Predict middle frames
+        # # for i, video_section in enumerate(train_video[0, 2:-2], start=2):
+        # for i in range(0, num_frames - (self.frames - 1)):
+        #     # print(f"i: {i}")
+        #     # print(f"i+frames: {i+self.frames}")
+        #     # # print(f"Predicting frame {int(i + 1 + self.frames / 2)} of {num_frames}\n")
+        #     # print(f"Predicting frame {int(i + 2 + self.frames / 2)} of {num_frames}\n")
+        #     start = timer()
+        #     # fmt: off
+        #     pred_frame = model.predict(train_video[:, i: i + self.frames])[:, 2]
+        #     # fmt: on
+        #     end = timer()
+        #     predicted_frames[i + 2] = pred_frame
+        #     total_time += (end - start) * 1000
+        #
+        # # Manually predict last 3 frames
+        # start = timer()
+        # # fmt: off
+        # frame_2_1 = model.predict(train_video[:, -self.frames:])[:, -2:][0]
+        # # fmt: on
+        # end = timer()
+        # total_time += (end - start) * 1000
+        # predicted_frames[-2:] = frame_2_1
         # save_img(
         #     "original.mp4",
         #     self.deprocess_image(np.expand_dims(original_video, axis=0), plot=plot),
