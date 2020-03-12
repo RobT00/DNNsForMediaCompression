@@ -20,6 +20,7 @@ import glob
 import cv2
 import re
 from timeit import default_timer as timer  # Measured in seconds
+from tqdm import tqdm
 
 
 class DataManagement:
@@ -90,7 +91,6 @@ class DataManagement:
             cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise UserWarning("Cannot read video, is codec installed?")
-        # from tqdm import tqdm
 
         # while cap.isOpened():
         # Go to end of video
@@ -482,6 +482,7 @@ class DataManagement:
 
     def get_input_dims(self):
         # width > height
+        # (height, width, channels)
         if self.sequences:
             # Add number of frames
             # d = self.input_dims.get("dims", (144, 176, 3))
@@ -811,6 +812,7 @@ class DataManagement:
         os.chdir(t_dir)
         with open("avg_time.txt", "a") as out_file:
             out_file.write(f"compressed_path: {self.compressed_data_path}\n")
+            out_file.write(f"out_path: {self.out_path}\n")
             out_file.write(f"Average time to predict: {avg_time}")
 
         os.chdir(return_dir)
@@ -849,13 +851,7 @@ class DataManagement:
         return (end - start) * 1000
 
     def output_results_videos(
-        self,
-        model,
-        # input_videos,
-        # labels,
-        training_data=None,
-        loss_fn="MS-SSIM",
-        **kwargs,
+        self, model, training_data=None, loss_fn="MS-SSIM", **kwargs
     ):
         f_name = ""
         return_dir = os.getcwd()
@@ -969,8 +965,9 @@ class DataManagement:
             ),
             reverse=True,
         )
-        qualities = qualities[:3]  # get top 3
-        for quality in qualities:
+        if training_data:
+            qualities = qualities[:3]  # get top 3
+        for quality in tqdm(qualities, position=0, leave=True):
             match_string = f"_{quality}.mp4"
             for i, video_file in enumerate(
                 glob.glob(self.compressed_data_path + f"/*{match_string}"), start=1
@@ -993,6 +990,7 @@ class DataManagement:
         os.chdir(t_dir)
         with open("avg_time.txt", "a") as out_file:
             out_file.write(f"compressed_path: {self.compressed_data_path}\n")
+            out_file.write(f"out_path: {self.out_path}\n")
             out_file.write(f"Average time to predict: {avg_time}")
 
         os.chdir(return_dir)
@@ -1046,41 +1044,8 @@ class DataManagement:
                 pred_frame = pred_frame[:, int(frames_predicted / 2)]
             predicted_frames[i] = pred_frame
             total_time += (end - start) * 1000
-        # Manually predict first 2 frames
-        # frame_1_2 = model.predict(train_video[:, : self.frames])[:, :2][0]
-        # video_size = (num_frames,) + frame_1_2.shape[1:]
-        # # (frames, height, width, channels)
-        # predicted_frames = np.zeros(video_size, dtype=self.precision)
-        # predicted_frames[:2] = frame_1_2
 
-        # # TODO - Use np.delete() if memory issues ?
-        # # Predict middle frames
-        # # for i, video_section in enumerate(train_video[0, 2:-2], start=2):
-        # for i in range(0, num_frames - (self.frames - 1)):
-        #     # print(f"i: {i}")
-        #     # print(f"i+frames: {i+self.frames}")
-        #     # # print(f"Predicting frame {int(i + 1 + self.frames / 2)} of {num_frames}\n")
-        #     # print(f"Predicting frame {int(i + 2 + self.frames / 2)} of {num_frames}\n")
-        #     start = timer()
-        #     # fmt: off
-        #     pred_frame = model.predict(train_video[:, i: i + self.frames])[:, 2]
-        #     # fmt: on
-        #     end = timer()
-        #     predicted_frames[i + 2] = pred_frame
-        #     total_time += (end - start) * 1000
-        #
-        # # Manually predict last 3 frames
-        # start = timer()
-        # # fmt: off
-        # frame_2_1 = model.predict(train_video[:, -self.frames:])[:, -2:][0]
-        # # fmt: on
-        # end = timer()
-        # total_time += (end - start) * 1000
-        # predicted_frames[-2:] = frame_2_1
-        # save_img(
-        #     "original.mp4",
-        #     self.deprocess_image(np.expand_dims(original_video, axis=0), plot=plot),
-        # )
+        # TODO - Use np.delete() if memory issues ?
         self.deprocess_video(train_video.squeeze(axis=0), "compressed")
 
         self.deprocess_video(predicted_frames, "trained")
