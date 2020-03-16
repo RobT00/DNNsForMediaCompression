@@ -6,8 +6,6 @@ import tensorflow as tf
 import numpy as np
 import os
 import tempfile
-
-# from PIL import Image
 from keras_preprocessing.image import array_to_img
 import shutil
 
@@ -58,7 +56,7 @@ def tf_psnr_vid(y_true, y_pred, max_val=1.0):
     :return: PSNR, result is negated in order to minimise loss (maximise PSNR)
     """
     if len(y_pred.shape) > 4:
-        frames = y_pred.shape[1] if y_pred.shape[1] else 5
+        frames = y_pred.shape[1] if y_pred.shape[1] else 1
         mid_frame = int(frames / 2)
         pred_frame = y_pred[:, mid_frame, ...]
     else:
@@ -104,7 +102,7 @@ def tf_ms_ssim_vid(y_true, y_pred, max_val=1.0):
     :return: MS-SSIM, result is negated in order to minimise loss (maximise MS-SIM)
     """
     if len(y_pred.shape) > 4:
-        frames = y_pred.shape[1] if y_pred.shape[1] else 5
+        frames = y_pred.shape[1] if y_pred.shape[1] else 1
         mid_frame = int(frames / 2)
         pred_frame = y_pred[:, mid_frame, ...]
     else:

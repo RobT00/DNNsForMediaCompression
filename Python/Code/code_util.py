@@ -25,7 +25,15 @@ from tqdm import tqdm
 
 class DataManagement:
     def __init__(
-        self, script_dir, sequences, c_images, o_images, o_dir, precision, input_dims
+        self,
+        script_dir,
+        sequences,
+        c_images,
+        o_images,
+        o_dir,
+        precision,
+        input_dims,
+        c_space,
     ):
         self.compare_dict = dict()
         try:
@@ -40,19 +48,23 @@ class DataManagement:
         self.original_data_path = o_images
         self.out_path = o_dir
         # Temp variable for testing sequences - video
-        self.frames = 5
+        self.frames = 5 if sequences else 1
         # self.frames = 250
         self.fps = None
         # self.train_datagen = ImageDataGenerator(
         #     rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
         # )
         # self.test_datagen = ImageDataGenerator(rescale=None, dtype=precision)
+        self.c_space = c_space.upper()
 
-    def preprocess_image(self, image_path, mode=None, plot=False, **dims):
+    def preprocess_image(
+        self, image_path, mode=None, do_conversion=True, plot=False, **dims
+    ):
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param image_path: Path to image
         :param mode: Mode to process image
+        :param do_conversion: Boolean - do conversion to another colourspace
         :param plot: Boolean - to plot image
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
         :return: Processed image
@@ -60,11 +72,19 @@ class DataManagement:
         img = load_img(image_path)
         img = img_to_array(img, dtype=self.precision)
         img = self.check_dims(img, dims.get("dims", img.shape))
+        # if do_conversion:
+        #     img /= 255.0  # Scale 0 - 1 before conversion
+        #     if self.c_space == "YUV":
+        #         img = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)  # Convert to RGB -> YUV
+        #     elif self.c_space == "BGR":
+        #         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # Convert to RGB -> YUV
+        #     img *= 255.0  # Re-scale 0 - 255 (for augmentation)
+        # img = np.clip(img, 0, 255)  # Ensure 0 - 255
         # if mode == "div":
         #     img /= 255.0
         # else:
         #     img = preprocess_input(img, data_format=data_format, mode=mode)
-        img = self.do_augmentation(mode, img)
+        img = self.do_augmentation(mode, img, do_conversion=do_conversion)
         if plot:
             plt.figure()
             plt.imshow(img.astype(float))
@@ -73,12 +93,19 @@ class DataManagement:
         return img
 
     def preprocess_video(
-        self, video_path, mode=None, plot=False, get_frames=None, **dims
+        self,
+        video_path,
+        mode=None,
+        do_conversion=True,
+        plot=False,
+        get_frames=None,
+        **dims,
     ):
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param video_path: Path to video
         :param mode: Mode to process image
+        :param do_conversion: Boolean - do conversion to other colourspace
         :param plot: Boolean - to plot image
         :param get_frames: Frames to get -- when using generator
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
@@ -136,7 +163,17 @@ class DataManagement:
             #     frame /= 255.0
             # else:
             #     frame = preprocess_input(frame, data_format=data_format, mode=mode)
-            frame = self.do_augmentation(mode, frame)
+            # if do_conversion:
+            #     frame /= 255.0
+            #     if self.c_space == "YUV":
+            #         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)  # BGR -> YUV
+            #     elif self.c_space == "RGB":
+            #         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR -> RGB
+            #     frame *= 255.0  # Re-scale 0 - 255 (for augmentation)
+            # frame = np.clip(frame, 0, 255)  # Ensure 0 - 255
+            frame = self.do_augmentation(
+                mode, frame, do_conversion=do_conversion, frame=True
+            )
             if plot:
                 plt.figure()
                 plt.imshow(frame.astype(float))
@@ -146,7 +183,7 @@ class DataManagement:
 
         return vid
 
-    def do_augmentation(self, aug_type: dict, img):
+    def do_augmentation(self, aug_type: dict, img, do_conversion=True, frame=False):
         """
         Function to do some augmentation to an image, to expand training
         :param img: Input image
@@ -219,7 +256,20 @@ class DataManagement:
                     img = contrast(aug, img)
                 # Ensure image limits and dtype after each pass
                 img = np.clip(img, 0.0, 255.0).astype(dtype=self.precision)
+        # TODO - DO colourspace stuff here ?
         img /= 255.0
+        if do_conversion:
+            if frame:
+                if self.c_space == "YUV":
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)  # BGR -> YUV
+                elif self.c_space == "RGB":
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # BGR -> RGB
+            else:
+                if self.c_space == "YUV":
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)  # RGB -> YUV
+                elif self.c_space == "BGR":
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # RGB -> BGR
+            img = np.clip(img, 0.0, 1.0).astype(dtype=self.precision)
 
         return img
 
@@ -230,26 +280,11 @@ class DataManagement:
         :return: Dictionary containing augmentations to apply
         """
         noise_types = ["gaussian", "s&p", "poisson", "speckle"]
+        # fmt: off
         rotations = [
-            1,
-            5,
-            10,
-            15,
-            20,
-            30,
-            40,
-            45,
-            55,
-            60,
-            75,
-            90,
-            120,
-            150,
-            160,
-            180,
-            270,
-            290,
+            1, 5, 10, 15, 20, 30, 40, 45, 55, 60, 75, 90, 120, 150, 160, 180, 270, 290,
         ]
+        # fmt: on
         brightness_values = [0.25, 0.5, 0.75, 0.85, 0.99, 1.01, 1.25, 1.5, 1.75, 2]
         contrast_values = [1, 5, 10, 20, 25, 33, 42, 50, 60, 75, 85, 99]
         augmentations = {
@@ -362,12 +397,11 @@ class DataManagement:
 
         return image
 
-    @staticmethod
-    def deprocess_image(img, data_format="channels_first", plot=False):
+    def deprocess_image(self, img, do_conversion=False, frame=False, plot=False):
         """
         Convert the predicted image from the model back to [0..255] for viewing / saving.
         :param img: Predicted image
-        :param data_format: Format to process image
+        :param do_conversion: Boolean - perform colourspace conversion, as required
         :param plot: Boolean - to plot image for viewing
         :return: Restored image
         """
@@ -380,8 +414,21 @@ class DataManagement:
         # img += 0.
         if img.shape[-1] != 3:
             raise ValueError("Not RGB")
-        if len(img.shape) == 4:
-            img = img.reshape((img.shape[1], img.shape[2], img.shape[3]))
+        if len(img.shape) > 3:
+            img = img.reshape((img.shape[-3], img.shape[-2], img.shape[-1]))
+
+        if do_conversion:
+            if frame:
+                if self.c_space == "YUV":
+                    img = cv2.cvtColor(img, cv2.COLOR_YUV2BGR)  # YUV -> BGR
+                elif self.c_space == "RGB":
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # RGB -> BGR
+            else:
+                if self.c_space == "YUV":
+                    img = cv2.cvtColor(img, cv2.COLOR_YUV2RGB)  # YUV -> RGB
+                elif self.c_space == "BGR":
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # BGR -> RGB
+            img = np.clip(img, 0.0, None)
         try:
             img *= 255.0
         except RuntimeWarning:
@@ -395,90 +442,90 @@ class DataManagement:
 
         return img
 
-    def get_training_data(self, **kwargs):
-        if self.sequences:
-            return self.get_training_videos(**kwargs)
-        else:
-            return self.get_training_images(**kwargs)
+    # def get_training_data(self, **kwargs):
+    #     if self.sequences:
+    #         return self.get_training_videos(**kwargs)
+    #     else:
+    #         return self.get_training_images(**kwargs)
 
-    def get_training_videos(self, img_format="mp4", plot=False):
-        # raise UserWarning("The generator must be used when training on video")
-        compressed_video = dict()
-        for compression_level in range(1):
-            for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
-                vid = self.preprocess_video(filename, plot=plot, **self.input_dims)
-                if not self.input_dims:
-                    self.set_input_dims(vid[0].shape)
-                compressed_video.setdefault(compression_level, list()).append(vid)
-
-        compressed_video_array = list()
-        for i in compressed_video.values():
-            compressed_video_array.extend(i)
-
-        compressed_video_array = np.asarray(
-            compressed_video_array, dtype=self.precision
-        )
-
-        return compressed_video, compressed_video_array
-
-    def get_training_images(self, img_format="jpg", plot=False):
-        compressed_images = dict()
-        for compression_level in os.listdir(self.compressed_data_path):
-            for filename in glob.glob(
-                # fmt: off
-                os.path.join(self.compressed_data_path,
-                             compression_level) + f"/*.{img_format}"
-                # fmt: on
-            ):
-                img = self.preprocess_image(filename, plot=plot, **self.input_dims)
-                if not self.input_dims:
-                    self.set_input_dims(img.shape)
-                compressed_images.setdefault(compression_level, list()).append(img)
-
-        compressed_images_array = list()
-        for i in compressed_images.values():
-            compressed_images_array.extend(i)
-
-        compressed_images_array = np.asarray(
-            compressed_images_array, dtype=self.precision
-        )
-
-        return compressed_images, compressed_images_array
-
-    def get_labels(self, num_training, **kwargs):
-        if self.sequences:
-            return self.get_label_videos(num_training, **kwargs)
-        else:
-            return self.get_label_images(num_training, **kwargs)
-
-    def get_label_videos(self, num_compressed_videos, img_format="y4m", plot=False):
-        # raise UserWarning("The generator must be used when training on video")
-        original_videos = list()
-        for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
-            vid = self.preprocess_video(filename, plot=plot, **self.input_dims)
-            if not self.input_dims:
-                self.set_input_dims(vid[0].shape)
-            original_videos.append(vid)
-
-        n = num_compressed_videos // len(original_videos)
-        original_videos *= n
-        original_videos = np.asarray(original_videos, dtype=self.precision)
-
-        return original_videos
-
-    def get_label_images(self, num_compressed_images, img_format="png", plot=False):
-        original_images = list()
-        for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
-            img = self.preprocess_image(filename, plot=plot, **self.input_dims)
-            if not self.input_dims:
-                self.set_input_dims(img.shape)
-            original_images.append(img)
-
-        n = num_compressed_images // len(original_images)
-        original_images *= n
-        original_images = np.asarray(original_images, dtype=self.precision)
-
-        return original_images
+    # def get_training_videos(self, img_format="mp4", plot=False, **kwargs):
+    #     # raise UserWarning("The generator must be used when training on video")
+    #     compressed_video = dict()
+    #     for compression_level in range(1):
+    #         for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
+    #             vid = self.preprocess_video(filename, plot=plot, **self.input_dims)
+    #             if not self.input_dims:
+    #                 self.set_input_dims(vid[0].shape)
+    #             compressed_video.setdefault(compression_level, list()).append(vid)
+    #
+    #     compressed_video_array = list()
+    #     for i in compressed_video.values():
+    #         compressed_video_array.extend(i)
+    #
+    #     compressed_video_array = np.asarray(
+    #         compressed_video_array, dtype=self.precision
+    #     )
+    #
+    #     return compressed_video, compressed_video_array
+    #
+    # def get_training_images(self, img_format="jpg", plot=False, **kwargs):
+    #     compressed_images = dict()
+    #     for compression_level in os.listdir(self.compressed_data_path):
+    #         for filename in glob.glob(
+    #             # fmt: off
+    #             os.path.join(self.compressed_data_path,
+    #                          compression_level) + f"/*.{img_format}"
+    #             # fmt: on
+    #         ):
+    #             img = self.preprocess_image(filename, plot=plot, **self.input_dims)
+    #             if not self.input_dims:
+    #                 self.set_input_dims(img.shape)
+    #             compressed_images.setdefault(compression_level, list()).append(img)
+    #
+    #     compressed_images_array = list()
+    #     for i in compressed_images.values():
+    #         compressed_images_array.extend(i)
+    #
+    #     compressed_images_array = np.asarray(
+    #         compressed_images_array, dtype=self.precision
+    #     )
+    #
+    #     return compressed_images, compressed_images_array
+    #
+    # def get_labels(self, num_training, **kwargs):
+    #     if self.sequences:
+    #         return self.get_label_videos(num_training, **kwargs)
+    #     else:
+    #         return self.get_label_images(num_training, **kwargs)
+    #
+    # def get_label_videos(self, num_compressed_videos, img_format="y4m", plot=False):
+    #     # raise UserWarning("The generator must be used when training on video")
+    #     original_videos = list()
+    #     for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
+    #         vid = self.preprocess_video(filename, plot=plot, **self.input_dims)
+    #         if not self.input_dims:
+    #             self.set_input_dims(vid[0].shape)
+    #         original_videos.append(vid)
+    #
+    #     n = num_compressed_videos // len(original_videos)
+    #     original_videos *= n
+    #     original_videos = np.asarray(original_videos, dtype=self.precision)
+    #
+    #     return original_videos
+    #
+    # def get_label_images(self, num_compressed_images, img_format="png", plot=False, **kwargs):
+    #     original_images = list()
+    #     for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
+    #         img = self.preprocess_image(filename, plot=plot, **self.input_dims)
+    #         if not self.input_dims:
+    #             self.set_input_dims(img.shape)
+    #         original_images.append(img)
+    #
+    #     n = num_compressed_images // len(original_images)
+    #     original_images *= n
+    #     original_images = np.asarray(original_images, dtype=self.precision)
+    #
+    #     return original_images
 
     def get_input_dims(self):
         # width > height
@@ -651,7 +698,8 @@ class DataManagement:
         """
         re_exp = re.compile(file_regex)
         base_file = os.path.basename(full_name)
-        base_filename = base_file.strip(re_exp.findall(base_file)[0])
+        # base_filename = base_file.strip(re_exp.findall(base_file)[0])
+        base_filename = re.sub(re_exp, "", base_file)
 
         return base_filename
 
@@ -673,17 +721,17 @@ class DataManagement:
         return index + dest_path
 
     # def output_results(self, model, input_data, labels, **kwargs):
-    def output_results(self, model, *args, **kwargs):
+    def output_results(self, model, **kwargs):
         if self.sequences:
             return self.output_results_videos(model, **kwargs)
         else:
-            return self.output_results_images(model, *args, **kwargs)
+            return self.output_results_images(model, **kwargs)
 
     def output_results_images(
         self,
         model,
-        input_images,
-        labels,
+        # input_images=None,
+        # labels=None,
         training_data=None,
         loss_fn="MS-SSIM",
         **kwargs,
@@ -693,7 +741,6 @@ class DataManagement:
         if training_data:
             training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
             self.out_path = os.path.join(self.out_path, model.name, training_dims)
-            self.out_path = os.path.join(self.out_path, model.name)
             if not os.path.exists(self.out_path):
                 os.makedirs(self.out_path)
             os.chdir(self.out_path)
@@ -709,13 +756,13 @@ class DataManagement:
             # Create plots to save training records
             fig_1 = plt.figure()
             plt.plot(
-                np.asarray(training_data.history["loss"]) * -1.0,
-                label=f"{loss_fn} Training Loss",
+                np.asarray(training_data.history["tf_ms_ssim"]) * -1.0,
+                label=f"MS-SSIM Training Loss",
             )
             # if validation:
             plt.plot(
-                np.asarray(training_data.history["val_loss"]) * -1.0,
-                label=f"{loss_fn} Validation Loss",
+                np.asarray(training_data.history["val_tf_ms_ssim"]) * -1.0,
+                label=f"MS-SSIM Validation Loss",
             )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
@@ -739,6 +786,21 @@ class DataManagement:
             plt.title(f_name)
 
             fig_3 = plt.figure()
+            plt.plot(
+                np.asarray(training_data.history["mean_squared_error"]),
+                label="MSE Training Loss",
+            )
+            # if validation:
+            plt.plot(
+                np.asarray(training_data.history["val_mean_squared_error"]),
+                label="MSE Validation Loss",
+            )
+            plt.xlabel("Epochs")
+            plt.ylabel("Score")
+            plt.legend()
+            plt.title(f_name)
+
+            fig_4 = plt.figure()
             plt.plot(np.asarray(training_data.history["lr"]), label="Learning Rate")
             plt.xlabel("Epochs")
             plt.ylabel("Learning Rate")
@@ -764,9 +826,10 @@ class DataManagement:
             os.makedirs(p_dir)
             os.chdir(p_dir)
 
-            fig_1.savefig(f"{loss_fn}.png")
+            fig_1.savefig(f"MS-SSIM.png")
             fig_2.savefig("PSNR.png")
-            fig_3.savefig("lr.png")
+            fig_3.savefig("MSE.png")
+            fig_4.savefig("lr.png")
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
@@ -783,31 +846,68 @@ class DataManagement:
         # Save sample training and validation images
         output_time = 0.0
         i = 0  # So that i will always be defined
+        re_exp = r"(_\d+\.jpg$)"
+        # input_images = input_images if input_images else os.listdir(self.compressed_data_path)
+        input_images = os.listdir(self.compressed_data_path)
         num_images = 0
-        if type(input_images) is dict:
-            for compression_level, images in input_images.items():
-                for i, (t_im, o_im) in enumerate(
-                    # TODO - stop black adding whitespace before ':'
+        qualities = sorted(
+            set(
+                [
                     # fmt: off
-                    zip(images, labels[num_images: len(images) + num_images]), start=1
+                    j[1: len(j) - len(".jpg")]
                     # fmt: on
-                ):
-                    output_time += self.output_helper_images(
-                        t_dir,
-                        t_im,
-                        o_im,
-                        model,
-                        output_append=[str(compression_level), str(i)],
-                    )
-                num_images += i
-        else:
-            for i, (t_im, o_im) in enumerate(zip(input_images, labels), start=1):
+                    for j in list(set([re.findall(re_exp, i)[0] for i in input_images]))
+                ]
+            ),
+            reverse=True,
+        )
+        if training_data:
+            qualities = qualities[:3]  # get top 3
+        for quality in tqdm(qualities, position=0, leave=True):
+            match_string = f"_{quality}.jpg"
+            for i, image_file in enumerate(
+                glob.glob(self.compressed_data_path + f"/*{match_string}"), start=1
+            ):
+                base_name = self.get_base_filename(image_file, re_exp)
+                original_image = os.path.join(
+                    self.original_data_path, f"{base_name}.png"
+                )
                 output_time += self.output_helper_images(
-                    t_dir, t_im, o_im, model, output_append=str(i)
+                    t_dir,
+                    image_file,
+                    original_image,
+                    model,
+                    output_append=[f"{quality}", base_name],
                 )
             num_images += i
 
-        avg_time = timedelta(milliseconds=output_time / num_images)
+        # if type(input_images) is dict:
+        #     for compression_level, images in input_images.items():
+        #         for i, (t_im, o_im) in enumerate(
+        #             # TODO - stop black adding whitespace before ':'
+        #             # fmt: off
+        #             zip(images, labels[num_images: len(images) + num_images]), start=1
+        #             # fmt: on
+        #         ):
+        #             output_time += self.output_helper_images(
+        #                 t_dir,
+        #                 t_im,
+        #                 o_im,
+        #                 model,
+        #                 output_append=[str(compression_level), str(i)],
+        #             )
+        #         num_images += i
+        # else:
+        #     for i, (t_im, o_im) in enumerate(zip(input_images, labels), start=1):
+        #         output_time += self.output_helper_images(
+        #             t_dir, t_im, o_im, model, output_append=str(i)
+        #         )
+        #     num_images += i
+
+        try:
+            avg_time = timedelta(milliseconds=output_time / num_images)
+        except ZeroDivisionError:
+            avg_time = 0.0
 
         os.chdir(t_dir)
         with open("avg_time.txt", "a") as out_file:
@@ -837,16 +937,28 @@ class DataManagement:
         os.makedirs(output_directory)
         os.chdir(output_directory)
 
-        train_im = np.expand_dims(input_image, axis=0)
+        # Load training video
+        input_image = self.preprocess_image(input_image, **self.input_dims)
+
+        train_image = np.expand_dims(input_image, axis=0)
         start = timer()
-        train_pred = model.predict(train_im)
+        pred_image = model.predict(train_image)
         end = timer()
-        save_img(
-            "original.png",
-            self.deprocess_image(np.expand_dims(original_image, axis=0), plot=plot),
+
+        original_image = self.preprocess_image(
+            original_image, do_conversion=False, **self.input_dims
         )
-        save_img("compressed.png", self.deprocess_image(train_im, plot=plot))
-        save_img("trained.png", self.deprocess_image(train_pred, plot=plot))
+        save_img("original.png", self.deprocess_image(original_image, plot=plot))
+
+        save_img(
+            "compressed.png",
+            self.deprocess_image(input_image, do_conversion=True, plot=plot),
+        )
+
+        save_img(
+            "trained.png",
+            self.deprocess_image(pred_image, do_conversion=True, plot=plot),
+        )
 
         return (end - start) * 1000
 
@@ -877,13 +989,13 @@ class DataManagement:
             # Create plots to save training records
             fig_1 = plt.figure()
             plt.plot(
-                np.asarray(training_data.history["loss"]) * -1.0,
-                label=f"{loss_fn} Training Loss",
+                np.asarray(training_data.history["tf_ms_ssim_vid"]) * -1.0,
+                label=f"MS-SSIM Training Loss",
             )
             # if validation:
             plt.plot(
-                np.asarray(training_data.history["val_loss"]) * -1.0,
-                label=f"{loss_fn} Validation Loss",
+                np.asarray(training_data.history["val_tf_ms_ssim_vid"]) * -1.0,
+                label=f"MS-SSIM Validation Loss",
             )
             plt.xlabel("Epochs")
             plt.ylabel("Score")
@@ -892,6 +1004,21 @@ class DataManagement:
             # plt.show()
 
             fig_2 = plt.figure()
+            plt.plot(
+                np.asarray(training_data.history["tf_psnr_vid"]) * -1.0,
+                label="PSNR Training Loss",
+            )
+            # if validation:
+            plt.plot(
+                np.asarray(training_data.history["val_tf_psnr_vid"]) * -1.0,
+                label="PSNR Validation Loss",
+            )
+            plt.xlabel("Epochs")
+            plt.ylabel("Score")
+            plt.legend()
+            plt.title(f_name)
+
+            fig_3 = plt.figure()
             plt.plot(
                 np.asarray(training_data.history["mean_squared_error"]),
                 label="MSE Training Loss",
@@ -906,7 +1033,7 @@ class DataManagement:
             plt.legend()
             plt.title(f_name)
 
-            fig_3 = plt.figure()
+            fig_4 = plt.figure()
             plt.plot(np.asarray(training_data.history["lr"]), label="Learning Rate")
             plt.xlabel("Epochs")
             plt.ylabel("Learning Rate")
@@ -932,9 +1059,10 @@ class DataManagement:
             os.makedirs(p_dir)
             os.chdir(p_dir)
 
-            fig_1.savefig(f"{loss_fn}.png")
-            fig_2.savefig("mse.png")
-            fig_3.savefig("lr.png")
+            fig_1.savefig(f"MS-SSIM.png")
+            fig_2.savefig("PSNR.png")
+            fig_3.savefig("mse.png")
+            fig_4.savefig("lr.png")
 
             # Save model
             m_dir = os.path.join(out_path, "Model")
@@ -985,7 +1113,10 @@ class DataManagement:
                 )
             num_videos += i
 
-        avg_time = timedelta(milliseconds=output_time / num_videos)
+        try:
+            avg_time = timedelta(milliseconds=output_time / num_videos)
+        except ZeroDivisionError:
+            avg_time = 0.0
 
         os.chdir(t_dir)
         with open("avg_time.txt", "a") as out_file:
@@ -1014,8 +1145,6 @@ class DataManagement:
 
         os.makedirs(output_directory)
         os.chdir(output_directory)
-        # TODO - Mirror any BGR2RGB or BGR2YUV conversions here
-        # TODO - Fix for LSTM
         # Load training video
         train_video = self.load_video(input_video)
         metadata = self.video_metadata(train_video)
@@ -1055,20 +1184,22 @@ class DataManagement:
         #     original_video, precision, get_frames=frames, **self.input_dims
         # )
         original_video = self.preprocess_video(
-            original_video, get_frames=frames, **self.input_dims
+            original_video, get_frames=frames, do_conversion=False, **self.input_dims
         )
         original_video = np.asarray(original_video, dtype=self.precision)
-        self.deprocess_video(original_video, "original")
+        self.deprocess_video(original_video, "original", do_conversion=False)
 
         return total_time / num_frames
 
-    def deprocess_video(self, video, file_name, file_format="avi", **kwargs):
+    def deprocess_video(
+        self, video, file_name, file_format="avi", do_conversion=True, **kwargs
+    ):
         """
         Convert the video from a numpy array back to [0..255] for viewing / saving.
         :param video: Video as numpy array
         :param file_name: Name to save video under
         :param file_format: Format / container to save video as
-        :param fps: Playback speed of video
+        :param do_conversion: Boolean - perform colourspace conversion, as required
         :return: Restored image
         """
         file_name = file_name + "." + file_format
@@ -1086,7 +1217,9 @@ class DataManagement:
         writer = cv2.VideoWriter(file_name, fourcc, self.fps, (width, height))
 
         for frame in video:
-            frame = self.deprocess_image(frame, **kwargs)
+            frame = self.deprocess_image(
+                frame, do_conversion=do_conversion, frame=True, **kwargs
+            )
             writer.write(frame)
         # Close video writer
         writer.release()
