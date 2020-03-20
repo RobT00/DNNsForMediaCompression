@@ -3,6 +3,7 @@ File containing utility functions
 """
 import os
 import sys
+import pickle
 import models
 from datetime import timedelta
 from keras.models import load_model, Model
@@ -47,14 +48,8 @@ class DataManagement:
         self.compressed_data_path = c_images
         self.original_data_path = o_images
         self.out_path = o_dir
-        # Temp variable for testing sequences - video
         self.frames = 5 if sequences else 1
-        # self.frames = 250
         self.fps = None
-        # self.train_datagen = ImageDataGenerator(
-        #     rescale=None, dtype=precision, brightness_range=(0.1, 0.9)
-        # )
-        # self.test_datagen = ImageDataGenerator(rescale=None, dtype=precision)
         self.c_space = c_space.upper()
 
     def preprocess_image(
@@ -72,18 +67,6 @@ class DataManagement:
         img = load_img(image_path)
         img = img_to_array(img, dtype=self.precision)
         img = self.check_dims(img, dims.get("dims", img.shape))
-        # if do_conversion:
-        #     img /= 255.0  # Scale 0 - 1 before conversion
-        #     if self.c_space == "YUV":
-        #         img = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)  # Convert to RGB -> YUV
-        #     elif self.c_space == "BGR":
-        #         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # Convert to RGB -> YUV
-        #     img *= 255.0  # Re-scale 0 - 255 (for augmentation)
-        # img = np.clip(img, 0, 255)  # Ensure 0 - 255
-        # if mode == "div":
-        #     img /= 255.0
-        # else:
-        #     img = preprocess_input(img, data_format=data_format, mode=mode)
         img = self.do_augmentation(mode, img, do_conversion=do_conversion)
         if plot:
             plt.figure()
@@ -152,25 +135,8 @@ class DataManagement:
                     break
             if i < 0:
                 frame.fill(0)
-            # frame = img_to_array(frame, dtype=precision)  # Needed to infer precision
-            # TODO - Does RGB help ?
-            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert correct colour channels
-            # TODO Does YUV help ?
-            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)  # Convert to YUV
             frame = frame.astype(self.precision, copy=False)
             frame = self.check_dims(frame, dims.get("dims", frame.shape))
-            # if mode == "div":
-            #     frame /= 255.0
-            # else:
-            #     frame = preprocess_input(frame, data_format=data_format, mode=mode)
-            # if do_conversion:
-            #     frame /= 255.0
-            #     if self.c_space == "YUV":
-            #         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV)  # BGR -> YUV
-            #     elif self.c_space == "RGB":
-            #         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR -> RGB
-            #     frame *= 255.0  # Re-scale 0 - 255 (for augmentation)
-            # frame = np.clip(frame, 0, 255)  # Ensure 0 - 255
             frame = self.do_augmentation(
                 mode, frame, do_conversion=do_conversion, frame=True
             )
@@ -405,13 +371,6 @@ class DataManagement:
         :param plot: Boolean - to plot image for viewing
         :return: Restored image
         """
-        # if data_format == "channels_first":
-        #     img = img.reshape((3, img.shape[1], img.shape[2]))
-        #     img = img.transpose((1, 2, 0))
-        # else:
-        #     img = img.reshape((img.shape[1], img.shape[2], 3))
-        # img /= 2.0
-        # img += 0.
         if img.shape[-1] != 3:
             raise ValueError("Not RGB")
         if len(img.shape) > 3:
@@ -574,24 +533,6 @@ class DataManagement:
         return train_files, validate_files, function
 
     def image_generator(self, files, batch_size=42, file_type="png"):
-        # Get input image
-        # input_img = self.preprocess_image()
-        # Match output image
-        # out_name = input_img.name.split("_")[0]
-        # Do glob to find matching image
-        # for filename in glob.glob(self.compressed_images_path + f"/*.{img_format}"):
-        #     img = self.preprocess_image(
-        #         filename, precision, mode="div", plot=plot, **self.input_dims
-        #     )
-        #     if not self.input_dims:
-        #         self.input_dims.update({"dims": img.shape})
-        #     compression_level = int(
-        #         os.path.basename(filename).split(img_format)[0].split("_")[1][:-1]
-        #     )
-        #     compressed_images.setdefault(compression_level, list()).append(img)
-        # out_img = self.preprocess_image(glob.find.image(out_name))
-        # Return pairwise training set
-        # return (input_img, out_img)
         self.input_dims.update({"dims": self.get_input_dims()})
         while True:
             # Select files for the batch
@@ -698,7 +639,6 @@ class DataManagement:
         """
         re_exp = re.compile(file_regex)
         base_file = os.path.basename(full_name)
-        # base_filename = base_file.strip(re_exp.findall(base_file)[0])
         base_filename = re.sub(re_exp, "", base_file)
 
         return base_filename
@@ -720,48 +660,43 @@ class DataManagement:
 
         return index + dest_path
 
-    # def output_results(self, model, input_data, labels, **kwargs):
     def output_results(self, model, **kwargs):
         if self.sequences:
             return self.output_results_videos(model, **kwargs)
         else:
             return self.output_results_images(model, **kwargs)
 
-    def output_results_images(
-        self,
-        model,
-        # input_images=None,
-        # labels=None,
-        training_data=None,
-        loss_fn="MS-SSIM",
-        **kwargs,
-    ):
+    def output_helper(self, model, training_data):
         f_name = ""
-        return_dir = os.getcwd()
+        if not os.path.exists(self.out_path):
+            os.makedirs(self.out_path)
+        os.chdir(self.out_path)
         if training_data:
-            training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
-            self.out_path = os.path.join(self.out_path, model.name, training_dims)
-            if not os.path.exists(self.out_path):
-                os.makedirs(self.out_path)
-            os.chdir(self.out_path)
             # Create folder name based on params
-            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
+            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}_precision={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
                 # training_data.params["epochs"],
                 len(training_data.epoch),
                 training_data.params["batch_size"],
                 training_data.params["lr"],
+                self.precision,
             )
+
+            if self.sequences:
+                ms_ssim = "tf_ms_ssim_vid"
+                psnr = "tf_psnr_vid"
+            else:
+                ms_ssim = "tf_ms_ssim"
+                psnr = "tf_psnr"
 
             # Create plots to save training records
             fig_1 = plt.figure()
             plt.plot(
-                np.asarray(training_data.history["tf_ms_ssim"]) * -1.0,
+                np.asarray(training_data.history[f"{ms_ssim}"]) * -1.0,
                 label=f"MS-SSIM Training Loss",
             )
-            # if validation:
             plt.plot(
-                np.asarray(training_data.history["val_tf_ms_ssim"]) * -1.0,
+                np.asarray(training_data.history[f"val_{ms_ssim}"]) * -1.0,
                 label=f"MS-SSIM Validation Loss",
             )
             plt.xlabel("Epochs")
@@ -772,12 +707,11 @@ class DataManagement:
 
             fig_2 = plt.figure()
             plt.plot(
-                np.asarray(training_data.history["tf_psnr"]) * -1.0,
+                np.asarray(training_data.history[f"{psnr}"]) * -1.0,
                 label="PSNR Training Loss",
             )
-            # if validation:
             plt.plot(
-                np.asarray(training_data.history["val_tf_psnr"]) * -1.0,
+                np.asarray(training_data.history[f"val_{psnr}"]) * -1.0,
                 label="PSNR Validation Loss",
             )
             plt.xlabel("Epochs")
@@ -807,18 +741,6 @@ class DataManagement:
             plt.legend()
             plt.title(f_name)
 
-            f_name += "_metrics={}_model={}_precision={}".format(
-                ",".join(
-                    [
-                        i
-                        for i in training_data.params["metrics"]
-                        if i != "loss" and i[:4] != "val_"
-                    ]
-                ),
-                model.name,
-                self.precision,
-            )
-
             out_path = os.path.join(self.out_path, self.unique_file(f_name))
 
             # Save generated plots
@@ -834,20 +756,38 @@ class DataManagement:
             # Save model
             m_dir = os.path.join(out_path, "Model")
 
-            self.do_model_saving(model, m_dir)
+            self.do_saving(model, training_data, m_dir)
 
             t_dir = os.path.join(out_path, "Training")
         else:
             # f_name += "loaded_model={}_precision={}".format(model.name, self.precision)
-            f_name += "loaded_model"
-            os.chdir(self.out_path)
             t_dir = os.path.join(self.out_path, self.unique_file(f_name))
+
+        return t_dir
+
+    def output_results_images(
+        self,
+        model,
+        training_data=None,
+        loaded_model=False,
+        continue_training=False,
+        **kwargs,
+    ):
+        return_dir = os.getcwd()
+        if loaded_model:
+            if continue_training:
+                self.out_path = os.path.join(self.out_path, "trained_model")
+            else:
+                self.out_path = os.path.join(self.out_path, "loaded_model")
+        else:
+            training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
+            self.out_path = os.path.join(self.out_path, model.name, training_dims)
+        t_dir = self.output_helper(model, training_data)
 
         # Save sample training and validation images
         output_time = 0.0
         i = 0  # So that i will always be defined
         re_exp = r"(_\d+\.jpg$)"
-        # input_images = input_images if input_images else os.listdir(self.compressed_data_path)
         input_images = os.listdir(self.compressed_data_path)
         num_images = 0
         qualities = sorted(
@@ -880,29 +820,6 @@ class DataManagement:
                     output_append=[f"{quality}", base_name],
                 )
             num_images += i
-
-        # if type(input_images) is dict:
-        #     for compression_level, images in input_images.items():
-        #         for i, (t_im, o_im) in enumerate(
-        #             # TODO - stop black adding whitespace before ':'
-        #             # fmt: off
-        #             zip(images, labels[num_images: len(images) + num_images]), start=1
-        #             # fmt: on
-        #         ):
-        #             output_time += self.output_helper_images(
-        #                 t_dir,
-        #                 t_im,
-        #                 o_im,
-        #                 model,
-        #                 output_append=[str(compression_level), str(i)],
-        #             )
-        #         num_images += i
-        # else:
-        #     for i, (t_im, o_im) in enumerate(zip(input_images, labels), start=1):
-        #         output_time += self.output_helper_images(
-        #             t_dir, t_im, o_im, model, output_append=str(i)
-        #         )
-        #     num_images += i
 
         try:
             avg_time = timedelta(milliseconds=output_time / num_images)
@@ -963,118 +880,28 @@ class DataManagement:
         return (end - start) * 1000
 
     def output_results_videos(
-        self, model, training_data=None, loss_fn="MS-SSIM", **kwargs
+        self,
+        model,
+        training_data=None,
+        loaded_model=False,
+        continue_training=False,
+        **kwargs,
     ):
-        f_name = ""
         return_dir = os.getcwd()
-        if training_data:
+        encoder = self.compressed_data_path.split(os.sep)[-1]
+        if loaded_model:
+            if continue_training:
+                self.out_path = os.path.join(self.out_path, f"trained_model_{encoder}")
+            else:
+                self.out_path = os.path.join(self.out_path, f"loaded_model_{encoder}")
+        else:
             training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
-            encoder = self.compressed_data_path.split(os.sep)[-1]
             self.out_path = os.path.join(self.out_path, model.name, encoder)
             if "LowQual" in self.compressed_data_path.split(os.sep):
                 self.out_path = os.path.join(self.out_path, "LowQual")
             self.out_path = os.path.join(self.out_path, training_dims)
-            if not os.path.exists(self.out_path):
-                os.makedirs(self.out_path)
-            os.chdir(self.out_path)
-            # Create folder name based on params
-            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
-                training_data.model.optimizer.iterations.name.split("/")[0],
-                # training_data.params["epochs"],
-                len(training_data.epoch),
-                training_data.params["batch_size"],
-                training_data.params["lr"],
-            )
 
-            # Create plots to save training records
-            fig_1 = plt.figure()
-            plt.plot(
-                np.asarray(training_data.history["tf_ms_ssim_vid"]) * -1.0,
-                label=f"MS-SSIM Training Loss",
-            )
-            # if validation:
-            plt.plot(
-                np.asarray(training_data.history["val_tf_ms_ssim_vid"]) * -1.0,
-                label=f"MS-SSIM Validation Loss",
-            )
-            plt.xlabel("Epochs")
-            plt.ylabel("Score")
-            plt.legend()
-            plt.title(f_name)
-            # plt.show()
-
-            fig_2 = plt.figure()
-            plt.plot(
-                np.asarray(training_data.history["tf_psnr_vid"]) * -1.0,
-                label="PSNR Training Loss",
-            )
-            # if validation:
-            plt.plot(
-                np.asarray(training_data.history["val_tf_psnr_vid"]) * -1.0,
-                label="PSNR Validation Loss",
-            )
-            plt.xlabel("Epochs")
-            plt.ylabel("Score")
-            plt.legend()
-            plt.title(f_name)
-
-            fig_3 = plt.figure()
-            plt.plot(
-                np.asarray(training_data.history["mean_squared_error"]),
-                label="MSE Training Loss",
-            )
-            # if validation:
-            plt.plot(
-                np.asarray(training_data.history["val_mean_squared_error"]),
-                label="MSE Validation Loss",
-            )
-            plt.xlabel("Epochs")
-            plt.ylabel("Score")
-            plt.legend()
-            plt.title(f_name)
-
-            fig_4 = plt.figure()
-            plt.plot(np.asarray(training_data.history["lr"]), label="Learning Rate")
-            plt.xlabel("Epochs")
-            plt.ylabel("Learning Rate")
-            plt.legend()
-            plt.title(f_name)
-
-            f_name += "_metrics={}_model={}_precision={}".format(
-                ",".join(
-                    [
-                        i
-                        for i in training_data.params["metrics"]
-                        if i != "loss" and i[:4] != "val_"
-                    ]
-                ),
-                model.name,
-                self.precision,
-            )
-
-            out_path = os.path.join(self.out_path, self.unique_file(f_name))
-
-            # Save generated plots
-            p_dir = os.path.join(out_path, "Plots")
-            os.makedirs(p_dir)
-            os.chdir(p_dir)
-
-            fig_1.savefig(f"MS-SSIM.png")
-            fig_2.savefig("PSNR.png")
-            fig_3.savefig("mse.png")
-            fig_4.savefig("lr.png")
-
-            # Save model
-            m_dir = os.path.join(out_path, "Model")
-
-            self.do_model_saving(model, m_dir)
-
-            t_dir = os.path.join(out_path, "Training")
-        else:
-            # f_name += "loaded_model={}_precision={}".format(model.name, self.precision)
-            f_name += "loaded_model"
-            os.chdir(self.out_path)
-            t_dir = os.path.join(self.out_path, self.unique_file(f_name))
+        t_dir = self.output_helper(model, training_data)
 
         # Save sample training and validation images
         output_time = 0.0
@@ -1151,9 +978,6 @@ class DataManagement:
         num_frames = metadata.get("frames")
         mid_frame = int(self.frames / 2)
         frames = np.arange(-mid_frame, num_frames + mid_frame)
-        # train_video = self.preprocess_video(
-        #     train_video, precision, get_frames=frames, **self.input_dims
-        # )
         train_video = self.preprocess_video(
             train_video, get_frames=frames, **self.input_dims
         )
@@ -1180,9 +1004,6 @@ class DataManagement:
         self.deprocess_video(predicted_frames, "trained")
 
         original_video = self.load_video(original_video)
-        # original_video = self.preprocess_video(
-        #     original_video, precision, get_frames=frames, **self.input_dims
-        # )
         original_video = self.preprocess_video(
             original_video, get_frames=frames, do_conversion=False, **self.input_dims
         )
@@ -1237,14 +1058,17 @@ class DataManagement:
         return type(model) == Model
 
     @staticmethod
-    def do_model_saving(model, model_path):
+    def do_saving(model, history, model_path):
         os.makedirs(model_path)
         os.chdir(model_path)
 
-        # TODO - Use try except (finally) on saving, for memory issues
         # Save the whole model
         model.save(f"{model.name}.h5")  # For Keras (TF 1.0)
         model.save(f"{model.name}.tf")  # TF 2.0
 
         # Save weights only
         model.save_weights(f"{model.name}_weights.h5")
+
+        # Save the history
+        with open("history.pickle", "wb") as hist:
+            pickle.dump(history, hist, protocol=pickle.HIGHEST_PROTOCOL)

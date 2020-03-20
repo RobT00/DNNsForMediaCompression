@@ -94,25 +94,7 @@ class ModelClass:
 
         return x_train, x_val, y_train, y_val
 
-    def train(
-        self,
-        model,
-        train=None,
-        # label=None,
-        # x_train=None,
-        # x_val=None,
-        # y_train=None,
-        # y_val=None,
-        run_epochs=1,
-        batch_size=4,
-        util_class=None,
-        **kwargs,
-    ):
-        # if not generator and (
-        #     x_train is None or x_val is None or y_train is None or y_val is None
-        # ):
-        #     x_train, x_val, y_train, y_val = self.ready_training(train, label, **kwargs)
-
+    def train(self, model, run_epochs=1, batch_size=4, util_class=None, **kwargs):
         verbosity = 1
         max_time_seconds = int(60 * 60 * 16.5)
         if util_class.sequences:
