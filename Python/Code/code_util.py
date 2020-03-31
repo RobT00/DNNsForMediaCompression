@@ -26,15 +26,7 @@ from tqdm import tqdm
 
 class DataManagement:
     def __init__(
-        self,
-        script_dir,
-        sequences,
-        c_images,
-        o_images,
-        o_dir,
-        precision,
-        input_dims,
-        c_space,
+        self, script_dir, sequences, c_images, o_images, o_dir, input_dims, c_space
     ):
         self.compare_dict = dict()
         try:
@@ -42,7 +34,7 @@ class DataManagement:
         except TypeError:
             dims = None
         self.input_dims = {"dims": dims} if dims else dict()
-        self.precision = precision
+        self.precision = "float32"
         self.script_dir = script_dir
         self.sequences = sequences
         self.compressed_data_path = c_images
@@ -151,12 +143,13 @@ class DataManagement:
 
     def do_augmentation(self, aug_type: dict, img, do_conversion=True, frame=False):
         """
-        Function to do some augmentation to an image, to expand training
-        :param img: Input image
+        Function to do some augmentations to an image, diversifying training data
         :param aug_type: Type of augmentation to perform, may be multiple
+        :param img: Input image
+        :param do_conversion: Do colourspace conversion, if required
+        :param frame: If the input image is an OpenCV frame (video)
         :return: Augmented image
         """
-        # precision = img.dtype
 
         def add_noise(noise_typ, image):
             # noisy = np.copy(image)
@@ -222,8 +215,7 @@ class DataManagement:
                     img = contrast(aug, img)
                 # Ensure image limits and dtype after each pass
                 img = np.clip(img, 0.0, 255.0).astype(dtype=self.precision)
-        # TODO - DO colourspace stuff here ?
-        img /= 255.0
+        img /= 255.0  # Get floating point values for pixels
         if do_conversion:
             if frame:
                 if self.c_space == "YUV":
@@ -508,7 +500,7 @@ class DataManagement:
         """
         Helper method to set the input dims
         :param input_dims: Tuple of dimensions for input to model
-        :return: Updates class with input doms
+        :return: Updates class with input dims
         """
         self.input_dims.update({"dims": input_dims})
 
@@ -673,13 +665,12 @@ class DataManagement:
         os.chdir(self.out_path)
         if training_data:
             # Create folder name based on params
-            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}_precision={}".format(
+            f_name += "optimiser={}_epochs={}_batch_size={}_lr={}".format(
                 training_data.model.optimizer.iterations.name.split("/")[0],
                 # training_data.params["epochs"],
                 len(training_data.epoch),
                 training_data.params["batch_size"],
                 training_data.params["lr"],
-                self.precision,
             )
 
             if self.sequences:
@@ -694,13 +685,15 @@ class DataManagement:
             plt.plot(
                 np.asarray(training_data.history[f"{ms_ssim}"]) * -1.0,
                 label=f"MS-SSIM Training Loss",
+                color="blue",
             )
             plt.plot(
                 np.asarray(training_data.history[f"val_{ms_ssim}"]) * -1.0,
                 label=f"MS-SSIM Validation Loss",
+                color="orange",
             )
             plt.xlabel("Epochs")
-            plt.ylabel("Score")
+            plt.ylabel("MS-SSIM")
             plt.legend()
             plt.title(f_name)
             # plt.show()
@@ -709,13 +702,15 @@ class DataManagement:
             plt.plot(
                 np.asarray(training_data.history[f"{psnr}"]) * -1.0,
                 label="PSNR Training Loss",
+                color="blue",
             )
             plt.plot(
                 np.asarray(training_data.history[f"val_{psnr}"]) * -1.0,
                 label="PSNR Validation Loss",
+                color="orange",
             )
             plt.xlabel("Epochs")
-            plt.ylabel("Score")
+            plt.ylabel("PSNR (dB)")
             plt.legend()
             plt.title(f_name)
 
@@ -723,19 +718,24 @@ class DataManagement:
             plt.plot(
                 np.asarray(training_data.history["mean_squared_error"]),
                 label="MSE Training Loss",
+                color="blue",
             )
-            # if validation:
             plt.plot(
                 np.asarray(training_data.history["val_mean_squared_error"]),
                 label="MSE Validation Loss",
+                color="orange",
             )
             plt.xlabel("Epochs")
-            plt.ylabel("Score")
+            plt.ylabel("Mean Squared Error")
             plt.legend()
             plt.title(f_name)
 
             fig_4 = plt.figure()
-            plt.plot(np.asarray(training_data.history["lr"]), label="Learning Rate")
+            plt.plot(
+                np.asarray(training_data.history["lr"]),
+                label="Learning Rate",
+                color="blue",
+            )
             plt.xlabel("Epochs")
             plt.ylabel("Learning Rate")
             plt.legend()
@@ -748,7 +748,7 @@ class DataManagement:
             os.makedirs(p_dir)
             os.chdir(p_dir)
 
-            fig_1.savefig(f"MS-SSIM.png")
+            fig_1.savefig("MS-SSIM.png")
             fig_2.savefig("PSNR.png")
             fig_3.savefig("MSE.png")
             fig_4.savefig("lr.png")
@@ -760,7 +760,6 @@ class DataManagement:
 
             t_dir = os.path.join(out_path, "Training")
         else:
-            # f_name += "loaded_model={}_precision={}".format(model.name, self.precision)
             t_dir = os.path.join(self.out_path, self.unique_file(f_name))
 
         return t_dir
@@ -1013,7 +1012,7 @@ class DataManagement:
         return total_time / num_frames
 
     def deprocess_video(
-        self, video, file_name, file_format="avi", do_conversion=True, **kwargs
+        self, video, file_name, file_format="mkv", do_conversion=True, **kwargs
     ):
         """
         Convert the video from a numpy array back to [0..255] for viewing / saving.
@@ -1032,9 +1031,9 @@ class DataManagement:
         # FOURCC Codecs
         # http://www.fourcc.org/codecs.php
         # fourcc = cv2.VideoWriter_fourcc(*"HDYC")
-        # fourcc = cv2.VideoWriter_fourcc(*"HFYU")  # Use with mkv
+        fourcc = cv2.VideoWriter_fourcc(*"HFYU")  # Use with mkv
         # fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
+        # fourcc = cv2.VideoWriter_fourcc(*"XVID")
         writer = cv2.VideoWriter(file_name, fourcc, self.fps, (width, height))
 
         for frame in video:
@@ -1048,6 +1047,15 @@ class DataManagement:
     @staticmethod
     def get_model_from_string(classname):
         return getattr(sys.modules[__name__].models, classname)
+
+    def load_pickled(self, pickle_file="history"):
+        pickle_path = os.path.join(self.out_path, "Model", f"{pickle_file}.pickle")
+        try:
+            with open(pickle_path, "rb") as p_file:
+                p_data = pickle.load(p_file)
+        except FileNotFoundError:
+            p_data = None
+        return p_data
 
     def load_model_from_path(self, model_path):
         self.out_path = os.sep.join(model_path.split(os.sep)[:-2])
@@ -1071,4 +1079,7 @@ class DataManagement:
 
         # Save the history
         with open("history.pickle", "wb") as hist:
-            pickle.dump(history, hist, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(history.history, hist, protocol=pickle.HIGHEST_PROTOCOL)
+        # Save the training params
+        with open("params.pickle", "wb") as params:
+            pickle.dump(history.params, params, protocol=pickle.HIGHEST_PROTOCOL)
