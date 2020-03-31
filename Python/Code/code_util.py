@@ -1054,7 +1054,7 @@ class DataManagement:
             with open(pickle_path, "rb") as p_file:
                 p_data = pickle.load(p_file)
         except FileNotFoundError:
-            p_data = None
+            p_data = dict()
         return p_data
 
     def load_model_from_path(self, model_path):
