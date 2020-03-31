@@ -888,15 +888,26 @@ class DataManagement:
     ):
         return_dir = os.getcwd()
         encoder = self.compressed_data_path.split(os.sep)[-1]
+        if "LowQual" in self.compressed_data_path.split(os.sep):
+            low_qual = True
+        else:
+            low_qual = False
         if loaded_model:
             if continue_training:
-                self.out_path = os.path.join(self.out_path, f"trained_model_{encoder}")
+                if low_qual:
+                    self.out_path = os.path.join(
+                        self.out_path, f"trained_model_{encoder}_LowQual"
+                    )
+                else:
+                    self.out_path = os.path.join(
+                        self.out_path, f"trained_model_{encoder}"
+                    )
             else:
                 self.out_path = os.path.join(self.out_path, f"loaded_model_{encoder}")
         else:
             training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
             self.out_path = os.path.join(self.out_path, model.name, encoder)
-            if "LowQual" in self.compressed_data_path.split(os.sep):
+            if low_qual:
                 self.out_path = os.path.join(self.out_path, "LowQual")
             self.out_path = os.path.join(self.out_path, training_dims)
 
