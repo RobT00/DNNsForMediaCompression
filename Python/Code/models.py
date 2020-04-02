@@ -105,7 +105,7 @@ class ModelClass:
         else:
             monitor_metric = "mean_squared_error"
         cb = list()
-        cb_patience = min(int(run_epochs * 0.15), 50)
+        cb_patience = min(int(run_epochs * 0.15), 20)
         cb.append(
             ReduceLROnPlateau(
                 monitor=monitor_metric,
@@ -121,7 +121,7 @@ class ModelClass:
         )
 
         if run_epochs > 100:
-            cb_patience = min(int(run_epochs * 0.2), 150)
+            cb_patience = min(int(run_epochs * 0.2), 50)
             cb.append(
                 EarlyStopping(
                     verbose=True,
@@ -142,7 +142,8 @@ class ModelClass:
             epoch_steps = (len(test_files) * util_class.frames * 30) // batch_size
             val_steps = (len(val_files) * util_class.frames * 30) // batch_size
         else:
-            epoch_steps = 144 // batch_size
+            # epoch_steps = 144 // batch_size
+            epoch_steps = 408 // batch_size
             val_steps = epoch_steps // batch_size
         history = model.fit_generator(
             gen_function(test_files, batch_size=batch_size, **kwargs),

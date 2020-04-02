@@ -56,6 +56,7 @@ class DataManagement:
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
         :return: Processed image
         """
+        # img = cv2.imread(image_path).astype(dtype=self.precision)
         img = load_img(image_path)
         img = img_to_array(img, dtype=self.precision)
         img = self.check_dims(img, dims.get("dims", img.shape))
