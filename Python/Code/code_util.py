@@ -342,9 +342,11 @@ class DataManagement:
                 image = image.reshape([image.shape[0], image.shape[1], desired_dims[2]])
             if not check_ok(image.shape, desired_dims):
                 try:
+                    # TODO preserve aspect ratio ?
                     image = cv2.resize(
                         image,
-                        (desired_dims[0], desired_dims[1]),
+                        # (width, height)
+                        (desired_dims[1], desired_dims[0]),
                         interpolation=cv2.INTER_AREA,
                     )
                 except ValueError:
@@ -1009,7 +1011,7 @@ class DataManagement:
             predicted_frames[i] = pred_frame
             total_time += (end - start) * 1000
 
-        # TODO - Use np.delete() if memory issues ?
+        # Use np.delete() if memory issues
         self.deprocess_video(train_video.squeeze(axis=0), "compressed")
 
         self.deprocess_video(predicted_frames, "trained")
@@ -1077,8 +1079,7 @@ class DataManagement:
     def loaded_model(model):
         return type(model) == Model
 
-    @staticmethod
-    def do_saving(model, history, model_path):
+    def do_saving(self, model, history, model_path):
         os.makedirs(model_path)
         os.chdir(model_path)
 
@@ -1094,4 +1095,5 @@ class DataManagement:
             pickle.dump(history.history, hist, protocol=pickle.HIGHEST_PROTOCOL)
         # Save the training params
         with open("params.pickle", "wb") as params:
+            history.params["colourspace"] = self.c_space
             pickle.dump(history.params, params, protocol=pickle.HIGHEST_PROTOCOL)

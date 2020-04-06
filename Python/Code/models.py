@@ -97,9 +97,6 @@ class ModelClass:
     def train(self, model, run_epochs=1, batch_size=4, util_class=None, **kwargs):
         verbosity = 1
         max_time_seconds = int(60 * 60 * 16.5)
-        # TODO make monitor metric loss fn of previously loaded model
-        #  MSE -> PSNR (image)
-        #  PSNR -> MSE (video)
         if util_class.sequences:
             monitor_metric = "tf_psnr_vid"
         else:
@@ -439,7 +436,6 @@ class Attempt2(ModelClass):
         x = ZeroPadding2D(padding=(1, 3))(
             x
         )  # (x+(1*2), y+(9*2), z) -> (1022, 1534, 128)
-        # TODO - Upscale more
         upscale_decode = Conv2DTranspose(
             filters=32,
             kernel_size=3,
