@@ -97,10 +97,11 @@ class ModelClass:
     def train(self, model, run_epochs=1, batch_size=4, util_class=None, **kwargs):
         verbosity = 1
         max_time_seconds = int(60 * 60 * 16.5)
-        if util_class.sequences:
-            monitor_metric = "tf_psnr_vid"
-        else:
-            monitor_metric = "mean_squared_error"
+        monitor_metric = "mean_squared_error"
+        # if util_class.sequences:
+        #     monitor_metric = "tf_psnr_vid"
+        # else:
+        #     monitor_metric = "mean_squared_error"
         cb = list()
         cb_patience = min(int(run_epochs * 0.15), 20)
         cb.append(
