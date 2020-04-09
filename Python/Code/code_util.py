@@ -529,13 +529,19 @@ class DataManagement:
 
     def image_generator(self, files, batch_size=2, file_type="png"):
         self.input_dims.update({"dims": self.get_input_dims()})
-        re_exp = r"(_\d+\.jpg$)"
-        qualities = sorted(
-            set([j for j in list(set([re.findall(re_exp, i)[0] for i in files]))]),
-            reverse=True,
-        )
-        qualities = qualities[:-2]  # remove 2 highest qualities
-        files = [k for k in files if any(k[-len(j) :] == j for j in qualities)]
+        # re_exp = r"(_\d+\.jpg$)"
+        # qualities = sorted(
+        #     set([j for j in list(set([re.findall(re_exp, i)[0] for i in files]))]),
+        #     reverse=True,
+        # )
+        # qualities = qualities[:-2]  # remove 2 highest qualities
+        # fmt: off
+        # files = [k for k in files if any(k[-len(j):] == j for j in qualities)]
+        # fmt: on
+        qualities = ["_75.jpg", "_85.jpg", "_90.jpg"]
+        # fmt: off
+        files = [k for k in files if not any(k[-len(j):] == j for j in qualities)]
+        # fmt: on
         while True:
             # Select files for the batch
             batch_paths = np.random.choice(a=files, size=batch_size)
