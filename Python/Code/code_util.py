@@ -662,9 +662,9 @@ class DataManagement:
         # Check if the folder name already exists
         while os.path.exists(index + dest_path):
             if index:
-                index = "({}) ".format(str(int(index[1:-2]) + 1))
+                index = "{}_".format(str(int(index[1:-2]) + 1))
             else:
-                index = "(1) "
+                index = "1_"
 
         return index + dest_path
 
@@ -872,16 +872,25 @@ class DataManagement:
         os.makedirs(output_directory)
         os.chdir(output_directory)
 
-        # Load training video
-        input_image = self.preprocess_image(input_image, **self.input_dims)
+        # Load training image
+        ndims = len(self.input_dims["dims"])
+        dims = {"dims": self.input_dims["dims"][-3:]}
+        if ndims == 4:
+            seq_len = self.input_dims["dims"][0]
+            input_image = self.preprocess_image(input_image, **dims)
+            train_image = np.expand_dims(
+                np.repeat(np.expand_dims(input_image, axis=0), seq_len, axis=0), axis=0
+            )
+        else:
+            input_image = self.preprocess_image(input_image, **dims)
+            train_image = np.expand_dims(input_image, axis=0)
 
-        train_image = np.expand_dims(input_image, axis=0)
         start = timer()
         pred_image = model.predict(train_image)
         end = timer()
 
         original_image = self.preprocess_image(
-            original_image, do_conversion=False, **self.input_dims
+            original_image, do_conversion=False, **dims
         )
         save_img("original.png", self.deprocess_image(original_image, plot=plot))
 
@@ -890,6 +899,8 @@ class DataManagement:
             self.deprocess_image(input_image, do_conversion=True, plot=plot),
         )
 
+        if ndims == 4:
+            pred_image = pred_image[:, int(seq_len / 2)]
         save_img(
             "trained.png",
             self.deprocess_image(pred_image, do_conversion=True, plot=plot),
