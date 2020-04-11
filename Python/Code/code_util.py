@@ -791,9 +791,12 @@ class DataManagement:
         return_dir = os.getcwd()
         if loaded_model:
             if continue_training:
-                self.out_path = os.path.join(self.out_path, "trained_model")
+                dir_name = "trained_model"
             else:
-                self.out_path = os.path.join(self.out_path, "loaded_model")
+                dir_name = "loaded_model"
+            os.chdir(self.out_path)
+            self.out_path = os.path.join(self.out_path, self.unique_file(dir_name))
+            os.chdir(return_dir)
         else:
             training_dims = f"{model.input_shape[2]}x{model.input_shape[1]}"
             self.out_path = os.path.join(self.out_path, model.name, training_dims)
@@ -904,27 +907,31 @@ class DataManagement:
     ):
         return_dir = os.getcwd()
         encoder = self.compressed_data_path.split(os.sep)[-1]
+        low_qual = ""
+        no_deblock = ""
         if "LowQual" in self.compressed_data_path.split(os.sep):
-            low_qual = True
-        else:
-            low_qual = False
+            low_qual = "LowQual"
+        if "No_deblocking" in self.compressed_data_path.split(os.sep):
+            no_deblock = "No_deblocking"
         if loaded_model:
             if continue_training:
-                if low_qual:
-                    self.out_path = os.path.join(
-                        self.out_path, f"trained_model_{encoder}_LowQual"
-                    )
-                else:
-                    self.out_path = os.path.join(
-                        self.out_path, f"trained_model_{encoder}"
-                    )
+                dir_name = f"trained_model_{encoder}"
             else:
-                self.out_path = os.path.join(self.out_path, f"loaded_model_{encoder}")
+                dir_name = f"loaded_model_{encoder}"
+            if low_qual:
+                dir_name += f"_{low_qual}"
+            if no_deblock:
+                dir_name += f"_{no_deblock}"
+            os.chdir(self.out_path)
+            self.out_path = os.path.join(self.out_path, self.unique_file(dir_name))
+            os.chdir(return_dir)
         else:
             training_dims = f"{model.input_shape[3]}x{model.input_shape[2]}"
             self.out_path = os.path.join(self.out_path, model.name, encoder)
             if low_qual:
-                self.out_path = os.path.join(self.out_path, "LowQual")
+                self.out_path = os.path.join(self.out_path, low_qual)
+            if no_deblock:
+                self.out_path = os.path.join(self.out_path, no_deblock)
             self.out_path = os.path.join(self.out_path, training_dims)
 
         t_dir = self.output_helper(model, training_data)
