@@ -97,7 +97,7 @@ class ModelClass:
     def train(self, model, run_epochs=1, batch_size=4, util_class=None, **kwargs):
         verbosity = 1
         max_time_seconds = int(60 * 60 * 16.5)
-        monitor_metric = "mean_squared_error"
+        monitor_metric = "val_mean_squared_error"
         # if util_class.sequences:
         #     monitor_metric = "tf_psnr_vid"
         # else:
@@ -126,6 +126,7 @@ class ModelClass:
                     patience=cb_patience,
                     monitor=monitor_metric,
                     mode="min",
+                    min_delta=1e-5,
                 )
             )
         cb.append(TimeStopping(seconds=max_time_seconds, verbose=verbosity))
