@@ -198,11 +198,12 @@ class DataManagement:
         def rotate(degrees, image):
             return ndimage.rotate(image, degrees, reshape=False)
 
-        def brightness(level, image):
-            return cv2.convertScaleAbs(image, alpha=level, beta=0)
+        def brightness(level, image, max_pixel=255.0):
+            level *= max_pixel  # Convert percentage to absolute
+            return cv2.convertScaleAbs(image, alpha=1.0, beta=level)
 
         def contrast(level, image):
-            return cv2.convertScaleAbs(image, alpha=1.0, beta=level)
+            return cv2.convertScaleAbs(image, alpha=level, beta=0)
 
         if aug_type is not None:
             for aug_name, aug in aug_type.items():
@@ -242,10 +243,33 @@ class DataManagement:
         # fmt: off
         rotations = [
             1, 5, 10, 15, 20, 30, 40, 45, 55, 60, 75, 90, 120, 150, 160, 180, 270, 290,
-        ]
+        ]  # anti-clockwise
         # fmt: on
-        brightness_values = [0.25, 0.5, 0.75, 0.85, 0.99, 1.01, 1.25, 1.5, 1.75, 2]
-        contrast_values = [1, 5, 10, 20, 25, 33, 42, 50, 60, 75, 85, 99]
+        contrast_values = [
+            0.5,
+            0.75,
+            0.85,
+            0.99,
+            1.0,
+            1.01,
+            1.15,
+            1.25,
+            1.5,
+        ]  # -50% -> +50%
+        brightness_values = [
+            -0.5,
+            -0.4,
+            -0.3,
+            -0.2,
+            -0.1,
+            -0.01,
+            1,
+            1.01,
+            1.2,
+            1.3,
+            1.4,
+            1.5,
+        ]  # -50% -> + 50%
         augmentations = {
             "noise": noise_types,
             "rotate": rotations,
