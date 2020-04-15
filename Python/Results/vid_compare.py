@@ -15,7 +15,6 @@ def main(
     colour_space = "BGR"  # for opencv
     video = True
     out_filename = f"combined_{resolution}" if resolution is not None else "combined"
-    print(out_filename)
     data_man = code_util.DataManagement(
         None, video, None, None, output_dir, None, colour_space
     )  # Create Basic instance
