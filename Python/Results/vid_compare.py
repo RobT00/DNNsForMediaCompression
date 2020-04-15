@@ -18,10 +18,10 @@ def main(
     data_man = code_util.DataManagement(
         None, video, None, None, output_dir, None, colour_space
     )  # Create Basic instance
-    videos = ["compressed", "original", "trained"]
+    videos = ["original", "compressed", "trained"]
     vid_name_dict = {
-        "compressed": "Encoded",
         "original": "Original",
+        "compressed": "Encoded",
         "trained": "Post-Processed",
     }
     # load videos
