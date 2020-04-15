@@ -686,7 +686,7 @@ class DataManagement:
         # Check if the folder name already exists
         while os.path.exists(index + dest_path):
             if index:
-                index = "{}_".format(str(int(index[1:-2]) + 1))
+                index = "{}_".format(str(int(index[0:-1]) + 1))
             else:
                 index = "1_"
 
@@ -924,7 +924,11 @@ class DataManagement:
         )
 
         if ndims == 4:
-            pred_image = pred_image[:, int(seq_len / 2)]
+            try:
+                pred_image = pred_image[:, int(seq_len / 2)]
+            except IndexError:
+                shape = pred_image.shape
+                pred_image = np.reshape(pred_image, shape[-3:])
         save_img(
             "trained.png",
             self.deprocess_image(pred_image, do_conversion=True, plot=plot),
