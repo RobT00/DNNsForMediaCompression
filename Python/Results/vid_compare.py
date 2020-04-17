@@ -12,7 +12,15 @@ import numpy as np
 def main(
     input_dir: str, output_dir: str, extension: str = "mkv", resolution: str = None
 ):
-    colour_space = "BGR"  # for opencv
+    """
+    Create single video with side-by-side frames of input videos
+    :param input_dir: Directory of videos to play side-by-side
+    :param output_dir: Directory to output created video to
+    :param extension: Extension to load videos from and save new video using
+    :param resolution: Resolution of input videos
+    :return:
+    """
+    colour_space = "BGR"  # for OpenCV
     video = True
     out_filename = f"combined_{resolution}" if resolution is not None else "combined"
     data_man = code_util.DataManagement(
@@ -58,14 +66,13 @@ def main(
     else:
         raise RuntimeError(f"Expected frames >= {frames}, got {comp_frames}")
     # Using video 352x288
-    # 3 x 352 = 1056 -> 1280 - 1056 = 224 -> 224 / 2 = 112
-    # clip_gap = 112
     clip_gap = 10
     concat_vid = np.asarray(
         results_util.concat_n_videos(
-            loaded_vids, framerate, frames, gap=clip_gap, vid_names=vid_name_dict
+            loaded_vids, frames, gap=clip_gap, vid_names=vid_name_dict
         )
     )
+    data_man.fps = float(framerate)
     print(concat_vid.shape)
     data_man.deprocess_video(
         concat_vid,
