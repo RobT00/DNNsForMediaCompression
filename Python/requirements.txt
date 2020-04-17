@@ -1,0 +1,14 @@
+pre-commit
+black
+flake8
+flake8-bugbear
+numpy
+matplotlib
+keras
+regex
+scikit-learn
+opencv-python==4.1.1.26
+tqdm
+setuptools>=41.0.0
+ipykernel
+pillow

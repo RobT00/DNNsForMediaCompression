@@ -1,0 +1,8 @@
+[flake8]
+# To avoid issues with Black's line lengths
+max-line-length = 120
+# Recommendations from Black
+ignore = E501, E203, E501, F841, F401, W605
+select = C, E, F, W, B, B950
+
+# W605: Allow \X in regex
