@@ -1,5 +1,5 @@
 """
-File containing utility functions
+File containing utility functions for training models and processing data
 """
 import os
 import sys
@@ -7,13 +7,7 @@ import pickle
 import models
 from datetime import timedelta
 from keras.models import load_model, Model
-from keras_preprocessing.image import (
-    load_img,
-    img_to_array,
-    save_img,
-    ImageDataGenerator,
-)
-from keras_applications.imagenet_utils import preprocess_input
+from keras_preprocessing.image import load_img, img_to_array, save_img
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import ndimage
@@ -25,9 +19,30 @@ from tqdm import tqdm
 
 
 class DataManagement:
+    """
+    Class used for handling dataflow and processing for training
+    """
+
     def __init__(
-        self, script_dir, sequences, c_images, o_images, o_dir, input_dims, c_space
+        self,
+        script_dir: str,
+        sequences: bool,
+        c_data: str,
+        o_data: str,
+        out_dir: str,
+        input_dims: str,
+        c_space: str,
     ):
+        """
+        Initialise class - generally specified through runtime args in main.py
+        :param script_dir: Location of running script used to invoke this class
+        :param sequences: Boolean for image (false) or video (true) processing
+        :param c_data: Path to compressed (input) data - as training samples
+        :param o_data: Path to original (uncompressed) data - as ground truth
+        :param out_dir: Directory used for output
+        :param input_dims: Dimensions (height, width, channels)
+        :param c_space: Colourspace
+        """
         self.compare_dict = dict()
         try:
             dims = tuple(map(int, re.findall(r"\d+", input_dims)))
@@ -37,16 +52,21 @@ class DataManagement:
         self.precision = "float32"
         self.script_dir = script_dir
         self.sequences = sequences
-        self.compressed_data_path = c_images
-        self.original_data_path = o_images
-        self.out_path = o_dir
+        self.compressed_data_path = c_data
+        self.original_data_path = o_data
+        self.out_path = out_dir
         self.frames = 5 if sequences else 1
         self.fps = None
         self.c_space = c_space.upper()
 
     def preprocess_image(
-        self, image_path, mode=None, do_conversion=True, plot=False, **dims
-    ):
+        self,
+        image_path: str,
+        mode: dict = None,
+        do_conversion: bool = True,
+        plot: bool = False,
+        **dims,
+    ) -> np.ndarray:
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param image_path: Path to image
@@ -56,7 +76,6 @@ class DataManagement:
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
         :return: Processed image
         """
-        # img = cv2.imread(image_path).astype(dtype=self.precision)
         img = load_img(image_path)
         img = img_to_array(img, dtype=self.precision)
         img = self.check_dims(img, dims.get("dims", img.shape))
@@ -71,21 +90,21 @@ class DataManagement:
     def preprocess_video(
         self,
         video_path,
-        mode=None,
-        do_conversion=True,
-        plot=False,
-        get_frames=None,
+        mode: dict = None,
+        do_conversion: bool = True,
+        plot: bool = False,
+        get_frames: np.ndarray = None,
         **dims,
-    ):
+    ) -> list:
         """
         Preprocess images, scale and convert to numpy array for feeding to model.
         :param video_path: Path to video
-        :param mode: Mode to process image
+        :param mode: Mode to process frames
         :param do_conversion: Boolean - do conversion to other colourspace
-        :param plot: Boolean - to plot image
+        :param plot: Boolean - to show frames
         :param get_frames: Frames to get -- when using generator
         :param dims: Image dimensions to be used, tuple - (height, width, channels)
-        :return: Processed image
+        :return: Processed frames as list of np.ndarray elements
         """
         if get_frames is not None:
             # Video is already opened and streaming
@@ -95,31 +114,11 @@ class DataManagement:
         if not cap.isOpened():
             raise UserWarning("Cannot read video, is codec installed?")
 
-        # while cap.isOpened():
-        # Go to end of video
-        # cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
-        # # Get duration in milliseconds
-        # msec_dur = cap.get(cv2.CAP_PROP_POS_MSEC)
-        # num_frames_1 = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-        # fps = (num_frames_1 / msec_dur) * 1000
-        # if not self.fps:
-        #     self.fps = fps
-        # num_frames_2 = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        # fps_2 = (num_frames_2 / msec_dur) * 1000
-        # frame_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        # frame_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-        # channels = cap.get(
-        #     cv2.CAP_PROP_CHANNEL
-        # )  # Doesn't seem to do much (with greyscale)
-        # Return to start
-        # cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 0)
         vid = list()
         frames = get_frames if get_frames is not None else range(int(self.frames))
-        # for i in tqdm(num_frames_1, position=0, leave=True):
         for i in frames:
             cap.set(1, i)
             ret, frame = cap.read()
-            # cv2.imshow('frame', frame)
             if not ret:
                 if get_frames is not None:
                     frame = np.copy(vid[-1])
@@ -136,13 +135,21 @@ class DataManagement:
             if plot:
                 plt.figure()
                 plt.imshow(frame.astype(float))
+                # Choice of colourspace may affect how output is represented, matplotlib assumes RGB
+                # OpenCV defaults to BGR
                 plt.show()
             vid.append(frame)
         cap.release()
 
         return vid
 
-    def do_augmentation(self, aug_type: dict, img, do_conversion=True, frame=False):
+    def do_augmentation(
+        self,
+        aug_type: dict,
+        img: np.ndarray,
+        do_conversion: bool = True,
+        frame: bool = False,
+    ) -> np.ndarray:
         """
         Function to do some augmentations to an image, diversifying training data
         :param aug_type: Type of augmentation to perform, may be multiple
@@ -152,8 +159,7 @@ class DataManagement:
         :return: Augmented image
         """
 
-        def add_noise(noise_typ, image):
-            # noisy = np.copy(image)
+        def add_noise(noise_typ: str, image: np.ndarray):
             if noise_typ == "gaussian":
                 row, col, ch = image.shape
                 mean = 0
@@ -171,7 +177,6 @@ class DataManagement:
                 coords = [
                     np.random.randint(0, i - 1, int(num_salt)) for i in image.shape
                 ]
-                # image[coords] = 255.0
                 image[tuple(coords)] = 255.0
 
                 # Pepper mode
@@ -179,7 +184,6 @@ class DataManagement:
                 coords = [
                     np.random.randint(0, i - 1, int(num_pepper)) for i in image.shape
                 ]
-                # image[coords] = 0.0
                 image[tuple(coords)] = 0.0
                 noisy = image
             elif noise_typ == "poisson":
@@ -195,10 +199,10 @@ class DataManagement:
                 noisy = image
             return noisy
 
-        def rotate(degrees, image):
+        def rotate(degrees: int, image: np.ndarray):
             return ndimage.rotate(image, degrees, reshape=False)
 
-        def brightness(level, image, max_pixel=255.0):
+        def brightness(level: float, image: np.ndarray, max_pixel: float = 255.0):
             level *= max_pixel  # Convert percentage to absolute
             return cv2.convertScaleAbs(image, alpha=1.0, beta=level)
 
@@ -244,32 +248,13 @@ class DataManagement:
         rotations = [
             1, 5, 10, 15, 20, 30, 40, 45, 55, 60, 75, 90, 120, 150, 160, 180, 270, 290,
         ]  # anti-clockwise
-        # fmt: on
         contrast_values = [
-            0.5,
-            0.75,
-            0.85,
-            0.99,
-            1.0,
-            1.01,
-            1.15,
-            1.25,
-            1.5,
+            0.5, 0.75, 0.85, 0.99, 1.0, 1.01, 1.15, 1.25, 1.5,
         ]  # -50% -> +50%
         brightness_values = [
-            -0.5,
-            -0.4,
-            -0.3,
-            -0.2,
-            -0.1,
-            -0.01,
-            1,
-            1.01,
-            1.2,
-            1.3,
-            1.4,
-            1.5,
+            -0.5, -0.4, -0.3, -0.2, -0.1, -0.01, 1, 1.01, 1.2, 1.3, 1.4, 1.5,
         ]  # -50% -> + 50%
+        # fmt: on
         augmentations = {
             "noise": noise_types,
             "rotate": rotations,
@@ -308,7 +293,7 @@ class DataManagement:
         return chosen_augmentations
 
     @staticmethod
-    def load_video(video_path):
+    def load_video(video_path: str) -> cv2.VideoCapture:
         """
         Function for loading a video to the stream, be sure to release the video when done!
         :param video_path: Path to video file
@@ -320,7 +305,7 @@ class DataManagement:
 
         return video
 
-    def video_metadata(self, video):
+    def video_metadata(self, video: cv2.VideoCapture) -> dict:
         """
         Function for gather metadata about video, i.e length and fps
         :param video: Input video
@@ -340,7 +325,7 @@ class DataManagement:
         return metadata
 
     @staticmethod
-    def check_dims(image, desired_dims):
+    def check_dims(image: np.ndarray, desired_dims: tuple) -> np.ndarray:
         """
         Check if the image dimensions are correct, raise error if not.
         :param image: Tuple of dimensions for image being processed - (height, width, channels)
@@ -348,7 +333,7 @@ class DataManagement:
         :return: Image with correct dimensions, or raise error
         """
 
-        def check_ok(image_dims, wanted_dims):
+        def check_ok(image_dims: tuple, wanted_dims: tuple) -> bool:
             """
             Check if the image dimensions are the same as the desired dimensions.
             :param image_dims: Tuple of image dimensions - (height, width, channels)
@@ -357,7 +342,6 @@ class DataManagement:
             """
             return image_dims == wanted_dims
 
-        # i_height, i_width, i_channels = image.shape
         if not check_ok(image.shape, desired_dims):
             if image.shape[0] != desired_dims[0]:
                 if image.shape[1] == desired_dims[0]:
@@ -382,11 +366,18 @@ class DataManagement:
 
         return image
 
-    def deprocess_image(self, img, do_conversion=False, frame=False, plot=False):
+    def deprocess_image(
+        self,
+        img: np.ndarray,
+        do_conversion: bool = False,
+        frame: bool = False,
+        plot: bool = False,
+    ) -> np.ndarray:
         """
         Convert the predicted image from the model back to [0..255] for viewing / saving.
         :param img: Predicted image
         :param do_conversion: Boolean - perform colourspace conversion, as required
+        :param frame: Specify if input is from a sequence
         :param plot: Boolean - to plot image for viewing
         :return: Restored image
         """
@@ -420,105 +411,16 @@ class DataManagement:
 
         return img
 
-    # def get_training_data(self, **kwargs):
-    #     if self.sequences:
-    #         return self.get_training_videos(**kwargs)
-    #     else:
-    #         return self.get_training_images(**kwargs)
-
-    # def get_training_videos(self, img_format="mp4", plot=False, **kwargs):
-    #     # raise UserWarning("The generator must be used when training on video")
-    #     compressed_video = dict()
-    #     for compression_level in range(1):
-    #         for filename in glob.glob(self.compressed_data_path + f"/*.{img_format}"):
-    #             vid = self.preprocess_video(filename, plot=plot, **self.input_dims)
-    #             if not self.input_dims:
-    #                 self.set_input_dims(vid[0].shape)
-    #             compressed_video.setdefault(compression_level, list()).append(vid)
-    #
-    #     compressed_video_array = list()
-    #     for i in compressed_video.values():
-    #         compressed_video_array.extend(i)
-    #
-    #     compressed_video_array = np.asarray(
-    #         compressed_video_array, dtype=self.precision
-    #     )
-    #
-    #     return compressed_video, compressed_video_array
-    #
-    # def get_training_images(self, img_format="jpg", plot=False, **kwargs):
-    #     compressed_images = dict()
-    #     for compression_level in os.listdir(self.compressed_data_path):
-    #         for filename in glob.glob(
-    #             # fmt: off
-    #             os.path.join(self.compressed_data_path,
-    #                          compression_level) + f"/*.{img_format}"
-    #             # fmt: on
-    #         ):
-    #             img = self.preprocess_image(filename, plot=plot, **self.input_dims)
-    #             if not self.input_dims:
-    #                 self.set_input_dims(img.shape)
-    #             compressed_images.setdefault(compression_level, list()).append(img)
-    #
-    #     compressed_images_array = list()
-    #     for i in compressed_images.values():
-    #         compressed_images_array.extend(i)
-    #
-    #     compressed_images_array = np.asarray(
-    #         compressed_images_array, dtype=self.precision
-    #     )
-    #
-    #     return compressed_images, compressed_images_array
-    #
-    # def get_labels(self, num_training, **kwargs):
-    #     if self.sequences:
-    #         return self.get_label_videos(num_training, **kwargs)
-    #     else:
-    #         return self.get_label_images(num_training, **kwargs)
-    #
-    # def get_label_videos(self, num_compressed_videos, img_format="y4m", plot=False):
-    #     # raise UserWarning("The generator must be used when training on video")
-    #     original_videos = list()
-    #     for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
-    #         vid = self.preprocess_video(filename, plot=plot, **self.input_dims)
-    #         if not self.input_dims:
-    #             self.set_input_dims(vid[0].shape)
-    #         original_videos.append(vid)
-    #
-    #     n = num_compressed_videos // len(original_videos)
-    #     original_videos *= n
-    #     original_videos = np.asarray(original_videos, dtype=self.precision)
-    #
-    #     return original_videos
-    #
-    # def get_label_images(self, num_compressed_images, img_format="png", plot=False, **kwargs):
-    #     original_images = list()
-    #     for filename in glob.glob(self.original_data_path + f"/*.{img_format}"):
-    #         img = self.preprocess_image(filename, plot=plot, **self.input_dims)
-    #         if not self.input_dims:
-    #             self.set_input_dims(img.shape)
-    #         original_images.append(img)
-    #
-    #     n = num_compressed_images // len(original_images)
-    #     original_images *= n
-    #     original_images = np.asarray(original_images, dtype=self.precision)
-    #
-    #     return original_images
-
-    def get_input_dims(self):
-        # width > height
+    def get_input_dims(self) -> tuple:
+        """
+        Return the desired input dimensions for model, as recorded in the class instance
+        :return: Tuple of dimensions (height, width, channels)
+        """
         # (height, width, channels)
         if self.sequences:
-            # Add number of frames
-            # d = self.input_dims.get("dims", (144, 176, 3))
-            # d = self.input_dims.get("dims", (288, 352, 3))
-            # d = self.input_dims.get("dims", (48, 48, 3))
-            d = self.input_dims.get("dims", (128, 128, 3))
-            # d = self.input_dims.get("dims", (256, 256, 3))
-            d = (self.frames,) + d  # Frames first
-            # d = (None,) + d  # Unspecified number of frames
-            # d += (300,)  # Frames last
-            # self.input_dims.update({"dims": d})
+            # Add number of frames to resolution
+            d = self.input_dims.get("dims", (256, 256, 3))
+            d = (self.frames,) + d  # Place frames first
         else:
             d = self.input_dims.get("dims", (512, 768, 3))
         return d
@@ -531,7 +433,13 @@ class DataManagement:
         """
         self.input_dims.update({"dims": input_dims})
 
-    def generator_function(self, validate=True, split=0.2):
+    def generator_function(self, validate: bool = True, split: float = 0.2) -> tuple:
+        """
+        Perform train/validation split, return appropriate function for training sample generation
+        :param validate: Boolean, create a validation set
+        :param split: Fraction of data to be used for validation
+        :return: Tuple of training data, validation data, function for batch generation
+        """
         files = [
             os.path.join(self.compressed_data_path, f)
             for f in os.listdir(self.compressed_data_path)
@@ -541,7 +449,6 @@ class DataManagement:
             split_size = int(len(files) * split)
             train_files = files[:-split_size]
             validate_files = files[-split_size:]
-            # files = (train_files, validate_files)
         else:
             train_files = files
             validate_files = None
@@ -551,17 +458,17 @@ class DataManagement:
             function = self.image_generator
         return train_files, validate_files, function
 
-    def image_generator(self, files, batch_size=2, file_type="png"):
+    def image_generator(
+        self, files: list, batch_size: int = 2, file_type: str = "png"
+    ) -> tuple:
+        """
+        Generate training samples for image based models
+        :param files: Files to use for mini-batch generating
+        :param batch_size: Number of samples in each mini-batch
+        :param file_type: Extension of files to load
+        :return: model inputs, labels
+        """
         self.input_dims.update({"dims": self.get_input_dims()})
-        # re_exp = r"(_\d+\.jpg$)"
-        # qualities = sorted(
-        #     set([j for j in list(set([re.findall(re_exp, i)[0] for i in files]))]),
-        #     reverse=True,
-        # )
-        # qualities = qualities[:-2]  # remove 2 highest qualities
-        # fmt: off
-        # files = [k for k in files if any(k[-len(j):] == j for j in qualities)]
-        # fmt: on
         qualities = ["_75.jpg", "_85.jpg", "_90.jpg"]
         # fmt: off
         files = [k for k in files if not any(k[-len(j):] == j for j in qualities)]
@@ -601,7 +508,14 @@ class DataManagement:
             # return batch_x, batch_y
             yield batch_x, batch_y
 
-    def video_generator(self, files, batch_size=4, file_type="y4m"):
+    def video_generator(self, files: list, batch_size: int = 2, file_type: str = "y4m"):
+        """
+        Generate training samples for image based models
+        :param files: Files to use for mini-batch generating
+        :param batch_size: Number of samples in each mini-batch
+        :param file_type: Extension of files to load
+        :return: model inputs, labels
+        """
         dims = self.get_input_dims()
         self.set_input_dims(dims[1:])
         while True:
@@ -615,28 +529,19 @@ class DataManagement:
                 augment = self.get_augemntations()
                 # Load video
                 cap = self.load_video(input_video)
-                # cap = cv2.VideoCapture(input_video)
-                # if not cap.isOpened():
-                #     raise UserWarning("Cannot read video, is codec installed?")
                 # Randomly gather self.frames consecutive frames
                 metadata = self.video_metadata(cap)
                 # TODO - Handle blank before / after frames
                 start_frame = np.random.choice(a=metadata.get("frames") - self.frames)
                 frames = np.arange(start_frame, start_frame + self.frames)
-                # for i in frames:
-                #     ret, frame = cap.get(i)
-                #     if not ret:
-                #         raise UserWarning(f"Frame {i} not found!")
                 input = self.preprocess_video(
                     cap, get_frames=frames, mode=augment, **self.input_dims
                 )
                 cap.release()
+
                 # Repeat for output
                 re_exp = "(_\d+\.mp4$)"
-                # base_file = os.path.basename(input_video)
-                # file_name = base_file.strip(re_exp.findall(base_file)[0])
                 file_name = self.get_base_filename(input_video, re_exp)
-                # file_name = os.path.basename(input_video).split(f".mp4")[0]
                 file_path = os.path.join(
                     self.original_data_path, f"{file_name}.{file_type}"
                 )
@@ -662,12 +567,12 @@ class DataManagement:
             yield batch_x, batch_y
 
     @staticmethod
-    def get_base_filename(full_name, file_regex):
+    def get_base_filename(full_name: str, file_regex: str) -> str:
         """
         Helper function to retrieve a base file name for matching training and label data
         :param full_name: Path to training file
         :param file_regex: Regex to remove from training file to get match
-        :return:
+        :return: base name from input path
         """
         re_exp = re.compile(file_regex)
         base_file = os.path.basename(full_name)
@@ -676,7 +581,7 @@ class DataManagement:
         return base_filename
 
     @staticmethod
-    def unique_file(dest_path):
+    def unique_file(dest_path: str) -> str:
         """
         Iterative increase the number on a file name to generate a unique file name
         :param dest_path: Original file name, which may already exist
@@ -692,13 +597,26 @@ class DataManagement:
 
         return index + dest_path
 
-    def output_results(self, model, **kwargs):
+    def output_results(self, model: models, **kwargs) -> timedelta:
+        """
+        Record metrics from model training, produce samples of model performance
+        :param model: instance of trained model
+        :param kwargs:
+        :return: average time per model output
+        """
         if self.sequences:
             return self.output_results_videos(model, **kwargs)
         else:
             return self.output_results_images(model, **kwargs)
 
-    def output_helper(self, model, training_data):
+    def output_helper(self, model: models, training_data) -> str:
+        """
+        Utility function for creating required paths for data after training
+        Outputs graphs and saves metadata
+        :param model: trained model instance
+        :param training_data: history from model training
+        :return: path to place sample model output
+        """
         f_name = ""
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
@@ -806,12 +724,21 @@ class DataManagement:
 
     def output_results_images(
         self,
-        model,
+        model: models,
         training_data=None,
-        loaded_model=False,
-        continue_training=False,
+        loaded_model: bool = False,
+        continue_training: bool = False,
         **kwargs,
     ):
+        """
+        Produce statistics and samples from training image based model
+        :param model: trained model instance
+        :param training_data: history of model training
+        :param loaded_model: Boolean - specify if model is loaded or trained (new)
+        :param continue_training: Boolean - specify if loaded model has been re-trained
+        :param kwargs:
+        :return: average time for model to produce output
+        """
         return_dir = os.getcwd()
         if loaded_model:
             if continue_training:
@@ -880,13 +807,23 @@ class DataManagement:
 
     def output_helper_images(
         self,
-        output_directory,
-        input_image,
-        original_image,
-        model,
+        output_directory: str,
+        input_image: str,
+        original_image: str,
+        model: models,
         output_append=None,
-        plot=False,
-    ):
+        plot: bool = False,
+    ) -> float:
+        """
+        Utility function for creating model outputs, used when training or lading model for metrics
+        :param output_directory: path to put output
+        :param input_image: path of model input
+        :param original_image: path of corresponding label
+        :param model: trained model
+        :param output_append: items to append to output path
+        :param plot: Boolean - show outputs
+        :return: time (in seconds) to produce model output
+        """
         if type(output_append) is list:
             for appendage in output_append:
                 output_directory = os.path.join(output_directory, appendage)
@@ -938,12 +875,21 @@ class DataManagement:
 
     def output_results_videos(
         self,
-        model,
-        training_data=None,
-        loaded_model=False,
-        continue_training=False,
+        model: models,
+        training_data: bool = None,
+        loaded_model: bool = False,
+        continue_training: bool = False,
         **kwargs,
-    ):
+    ) -> float:
+        """
+        Produce statistics and samples from training image based model
+        :param model: trained model instance
+        :param training_data: history of model training
+        :param loaded_model: Boolean - specify if model is loaded or trained (new)
+        :param continue_training: Boolean - specify if loaded model has been re-trained
+        :param kwargs:
+        :return: average time for model to produce output
+        """
         return_dir = os.getcwd()
         encoder = self.compressed_data_path.split(os.sep)[-1]
         low_qual = ""
@@ -1029,13 +975,23 @@ class DataManagement:
 
     def output_helper_video(
         self,
-        output_directory,
-        input_video,
-        original_video,
-        model,
+        output_directory: str,
+        input_video: str,
+        original_video: str,
+        model: models,
         output_append=None,
         plot=False,
-    ):
+    ) -> float:
+        """
+        Utility function for creating model outputs, used when training or lading model for metrics
+        :param output_directory: path to put output
+        :param input_video: path of model input
+        :param original_video: path of corresponding label
+        :param model: trained model
+        :param output_append: items to append to output path
+        :param plot: Boolean - show outputs
+        :return: average time (in seconds) to produce each output frame
+        """
         if type(output_append) is list:
             for appendage in output_append:
                 output_directory = os.path.join(output_directory, appendage)
@@ -1085,15 +1041,20 @@ class DataManagement:
         return total_time / num_frames
 
     def deprocess_video(
-        self, video, file_name, file_format="mkv", do_conversion=True, **kwargs
+        self,
+        video: np.ndarray,
+        file_name: str,
+        file_format: str = "mkv",
+        do_conversion: bool = True,
+        **kwargs,
     ):
         """
         Convert the video from a numpy array back to [0..255] for viewing / saving.
-        :param video: Video as numpy array
+        :param video: Frames as numpy array
         :param file_name: Name to save video under
         :param file_format: Format / container to save video as
         :param do_conversion: Boolean - perform colourspace conversion, as required
-        :return: Restored image
+        :return:
         """
         file_name = file_name + "." + file_format
         width = video.shape[-2]
@@ -1118,10 +1079,20 @@ class DataManagement:
         writer.release()
 
     @staticmethod
-    def get_model_from_string(classname):
+    def get_model_from_string(classname: str):
+        """
+        Return constructor for a model from supplied model name
+        :param classname: Name of model for instantiation
+        :return: Constructor for specified model
+        """
         return getattr(sys.modules[__name__].models, classname)
 
-    def load_pickled(self, pickle_file="history"):
+    def load_pickled(self, pickle_file: str = "history") -> dict:
+        """
+        Load history of a model, saved in pickle format
+        :param pickle_file: Name of file to load
+        :return: unpickled data
+        """
         pickle_path = os.path.join(self.out_path, "Model", f"{pickle_file}.pickle")
         try:
             with open(pickle_path, "rb") as p_file:
@@ -1130,15 +1101,32 @@ class DataManagement:
             p_data = dict()
         return p_data
 
-    def load_model_from_path(self, model_path):
+    def load_model_from_path(self, model_path: str):
+        """
+        Load a trained model from  a file
+        :param model_path: Path to saved model file
+        :return: Instance of saved model
+        """
         self.out_path = os.sep.join(model_path.split(os.sep)[:-2])
         return load_model(model_path, compile=False)
 
     @staticmethod
-    def loaded_model(model):
+    def loaded_model(model: models) -> bool:
+        """
+        Check if input is an instance of a model
+        :param model: Supposed instance of models class to check
+        :return: True if model, else false
+        """
         return type(model) == Model
 
-    def do_saving(self, model, history, model_path):
+    def do_saving(self, model: models, history, model_path: str):
+        """
+        Save model and metadata post training
+        :param model: Trained model instance
+        :param history: History of model training
+        :param model_path: Path to save model and metadata at
+        :return:
+        """
         os.makedirs(model_path)
         os.chdir(model_path)
 

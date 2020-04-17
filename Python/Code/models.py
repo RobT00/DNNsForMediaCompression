@@ -1,5 +1,5 @@
 """
-File for all models, to be used by main.py
+File for all models, used by main.py
 """
 import os
 import ipykernel
@@ -24,84 +24,72 @@ from keras.layers import (
     ZeroPadding3D,
     GaussianDropout,
     Cropping2D,
-    Cropping3D,
-    add,
-    Flatten,
-    BatchNormalization,
-    Activation,
-    Dense,
-    Concatenate,
     concatenate,
     Reshape,
-    Permute,
     ConvLSTM2D,
     Lambda,
 )
 from keras import regularizers
-from keras.callbacks import (
-    EarlyStopping,
-    ModelCheckpoint,
-    LearningRateScheduler,
-    ReduceLROnPlateau,
-)
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow_addons.callbacks import TimeStopping
 from sklearn.model_selection import train_test_split
-from keras.preprocessing.image import ImageDataGenerator
 
 
 class ModelClass:
-    def __init__(self, dims, precision="float32", c_space="RGB", **kwargs):
+    """
+    Base class used for instantiating models
+    Forms basis of functions models use
+    """
+
+    def __init__(
+        self, dims: tuple, precision: str = "float32", c_space: str = "YUV", **kwargs
+    ):
+        """
+        Create base attributes for model instance
+        :param dims: Expected input dimensions for model
+        :param precision: Floating point precision of model
+        :param c_space: Colourspace model operates in
+        :param kwargs:
+        """
         self.set_precision(precision)
         self.input = self.input_layer(dims)
         self.c_space = c_space
 
     @staticmethod
-    def input_layer(dims):
+    def input_layer(dims: tuple) -> Input:
+        """
+        Create input layer for model
+        :param dims: Expected input dimensions for model
+        :return: Input layer for model
+        """
         return Input(shape=dims, name="input")
 
     @staticmethod
-    def set_precision(precision="float32"):
+    def set_precision(precision: str = "float32"):
+        """
+        Set floating point precision in Keras backend
+        :param precision: Floating point precision to use
+        :return:
+        """
         K.set_floatx(precision)
 
-    @staticmethod
-    def ready_training(
-        compressed_images,
-        original_images,
-        split=0.2,
-        state=42,
-        **kwargs
-        # *args, split=0.2, state=42, **kwargs
+    def train(
+        self, model, run_epochs: int = 1, batch_size: int = 2, util_class=None, **kwargs
     ):
-        # test_list_expanded = np.expand_dims(test_list, axis=0)
-        # test_list_other = np.expand_dims(test_list, axis=1)
-
-        # train_datagen = ImageDataGenerator(rescale=1./255, shear_range=0.2, zoom_range=0.2, horizontal_flip=True)
-        # test_datagen = ImageDataGenerator(rescale=1./255)
-        #
-        # training_images = train_datagen.flow_from_directory(compressed_images_path, target_size=(512, 768),
-        #                                                     color_mode='rgb', batch_size=32)
-        #
-        # testing_images = test_datagen.flow_from_directory(compressed_images_path, target_size=(512, 768),
-        #                                                   color_mode='rgb', batch_size=32)
-
-        # X_train, X_val, y_train, y_val = train_test_split(training_images, testing_images,
-        #                                                   test_size=0.2, random_state=42)
-        x_train, x_val, y_train, y_val = train_test_split(
-            compressed_images, original_images, test_size=split, random_state=state
-        )
-
-        return x_train, x_val, y_train, y_val
-
-    def train(self, model, run_epochs=1, batch_size=4, util_class=None, **kwargs):
+        """
+        Function to set up and perform model training
+        :param model: Model to be trained
+        :param run_epochs: Epochs to train for
+        :param batch_size: Mini-batch size to use
+        :param util_class: Instance of DataManagement class model is using
+        :param kwargs:
+        :return: History of trained model
+        """
         verbosity = 1
         max_time_seconds = int(60 * 60 * 16.5)
         monitor_metric = "val_mean_squared_error"
-        # if util_class.sequences:
-        #     monitor_metric = "tf_psnr_vid"
-        # else:
-        #     monitor_metric = "mean_squared_error"
         cb = list()
         cb_patience = min(int(run_epochs * 0.15), 20)
         cb.append(
@@ -130,12 +118,9 @@ class ModelClass:
                 )
             )
         cb.append(TimeStopping(seconds=max_time_seconds, verbose=verbosity))
-        # "val_tf_psnr"
-        # "val_loss" (MS-SSIM)
         print("Training")
         start = timer()
 
-        # if generator:
         test_files, val_files, gen_function = util_class.generator_function()
         if util_class.sequences:
             epoch_steps = (len(test_files) * util_class.frames * 30) // batch_size
@@ -160,19 +145,6 @@ class ModelClass:
             shuffle=True,
             initial_epoch=0,
         )
-        # else:
-        #     history = model.fit(
-        #         x_train,
-        #         y_train,
-        #         epochs=run_epochs,
-        #         batch_size=batch_size,
-        #         validation_data=(x_val, y_val),
-        #         shuffle=True,
-        #         verbose=verbosity,
-        #         callbacks=cb,
-        #     )
-
-        # TODO record metrics from screen on best iteration, record metrics for early stop and time to train
 
         end = timer()
         dur = end - start
@@ -235,6 +207,11 @@ class ModelClass:
         return Lambda(func, **kwargs)
 
 
+"""
+IMAGE MODELS
+"""
+
+
 class Attempt1(ModelClass):
     def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
@@ -286,10 +263,6 @@ class Attempt1(ModelClass):
 
 
 class Attempt2(ModelClass):
-    """
-    Model seems too large current, cannot allocate layer (2048, 3072, 69)
-    """
-
     def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
             dims, precision, **kwargs
@@ -491,10 +464,6 @@ class Attempt2(ModelClass):
 
 
 class Attempt3(ModelClass):
-    """
-    Model seems too large current, cannot allocate layer (2048, 3072, 69)
-    """
-
     def __init__(self, dims, precision="float32", **kwargs):
         super().__init__(
             dims, precision, **kwargs
@@ -862,6 +831,139 @@ class KerasAE(ModelClass):
         model.c_space = self.c_space
 
         return model
+
+
+class KerasDenoise(ModelClass):
+    def __init__(self, dims, precision="float32", **kwargs):
+        super().__init__(
+            dims, precision, **kwargs
+        )  # Is equivalent to super(KerasDenoise, self).__init__(dims)
+        self.name = "Keras Denoise AE"
+
+    def build(self):
+        x = Conv2D(32, (3, 3), activation="relu", padding="same")(self.input)
+        x = MaxPooling2D((2, 2), padding="same")(x)
+        x = Conv2D(32, (3, 3), activation="relu", padding="same")(x)
+        encoded = MaxPooling2D((2, 2), padding="same")(x)
+
+        x = Conv2D(32, (3, 3), activation="relu", padding="same")(encoded)
+        x = UpSampling2D((2, 2))(x)
+        x = Conv2D(32, (3, 3), activation="relu", padding="same")(x)
+        x = UpSampling2D((2, 2))(x)
+        decode = Conv2D(3, (3, 3), activation="relu", padding="same")(x)
+
+        model = Model(self.input, decode)
+
+        model.name = self.name
+
+        model.c_space = self.c_space
+
+        return model
+
+
+class UNet(ModelClass):
+    def __init__(self, dims, precision="float32", **kwargs):
+        super().__init__(dims, precision, **kwargs)
+        self.name = "U-Net"
+
+    def build(self):
+        conv1 = Conv2D(
+            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(self.input)
+        conv1 = Conv2D(
+            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv1)
+        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+        conv2 = Conv2D(
+            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(pool1)
+        conv2 = Conv2D(
+            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv2)
+        pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
+        conv3 = Conv2D(
+            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(pool2)
+        conv3 = Conv2D(
+            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv3)
+        pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+        conv4 = Conv2D(
+            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(pool3)
+        conv4 = Conv2D(
+            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv4)
+        drop4 = Dropout(0.5)(conv4)
+        pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
+
+        conv5 = Conv2D(
+            1024, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(pool4)
+        conv5 = Conv2D(
+            1024, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv5)
+        drop5 = Dropout(0.5)(conv5)
+
+        up6 = Conv2D(
+            512, 2, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(UpSampling2D(size=(2, 2))(drop5))
+        merge6 = concatenate([drop4, up6], axis=3)
+        conv6 = Conv2D(
+            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(merge6)
+        conv6 = Conv2D(
+            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv6)
+
+        up7 = Conv2D(
+            256, 2, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(UpSampling2D(size=(2, 2))(conv6))
+        merge7 = concatenate([conv3, up7], axis=3)
+        conv7 = Conv2D(
+            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(merge7)
+        conv7 = Conv2D(
+            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv7)
+
+        up8 = Conv2D(
+            128, 2, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(UpSampling2D(size=(2, 2))(conv7))
+        merge8 = concatenate([conv2, up8], axis=3)
+        conv8 = Conv2D(
+            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(merge8)
+        conv8 = Conv2D(
+            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv8)
+
+        up9 = Conv2D(
+            64, 2, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(UpSampling2D(size=(2, 2))(conv8))
+        merge9 = concatenate([conv1, up9], axis=3)
+        conv9 = Conv2D(
+            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(merge9)
+        conv9 = Conv2D(
+            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv9)
+        decode = Conv2D(
+            3, 3, activation="relu", padding="same", kernel_initializer="he_normal"
+        )(conv9)
+
+        model = Model(self.input, decode)
+
+        model.name = self.name
+
+        model.c_space = self.c_space
+
+        return model
+
+
+"""
+VIDEO MODELS
+"""
 
 
 class Attempt1_3D(ModelClass):
@@ -1335,134 +1437,6 @@ class LSTM2(ModelClass):
         # decode = Conv3D(
         #     filters=3, kernel_size=(1, 2, 2), strides=(1, 2, 2), padding="valid"
         # )(conv9)
-
-        model = Model(self.input, decode)
-
-        model.name = self.name
-
-        model.c_space = self.c_space
-
-        return model
-
-
-class KerasDenoise(ModelClass):
-    def __init__(self, dims, precision="float32", **kwargs):
-        super().__init__(
-            dims, precision, **kwargs
-        )  # Is equivalent to super(KerasDenoise, self).__init__(dims)
-        self.name = "Keras Denoise AE"
-
-    def build(self):
-        x = Conv2D(32, (3, 3), activation="relu", padding="same")(self.input)
-        x = MaxPooling2D((2, 2), padding="same")(x)
-        x = Conv2D(32, (3, 3), activation="relu", padding="same")(x)
-        encoded = MaxPooling2D((2, 2), padding="same")(x)
-
-        x = Conv2D(32, (3, 3), activation="relu", padding="same")(encoded)
-        x = UpSampling2D((2, 2))(x)
-        x = Conv2D(32, (3, 3), activation="relu", padding="same")(x)
-        x = UpSampling2D((2, 2))(x)
-        decode = Conv2D(3, (3, 3), activation="relu", padding="same")(x)
-
-        model = Model(self.input, decode)
-
-        model.name = self.name
-
-        model.c_space = self.c_space
-
-        return model
-
-
-class UNet(ModelClass):
-    def __init__(self, dims, precision="float32", **kwargs):
-        super().__init__(dims, precision, **kwargs)
-        self.name = "U-Net"
-
-    def build(self):
-        conv1 = Conv2D(
-            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(self.input)
-        conv1 = Conv2D(
-            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv1)
-        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-        conv2 = Conv2D(
-            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(pool1)
-        conv2 = Conv2D(
-            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv2)
-        pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
-        conv3 = Conv2D(
-            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(pool2)
-        conv3 = Conv2D(
-            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv3)
-        pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
-        conv4 = Conv2D(
-            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(pool3)
-        conv4 = Conv2D(
-            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv4)
-        drop4 = Dropout(0.5)(conv4)
-        pool4 = MaxPooling2D(pool_size=(2, 2))(drop4)
-
-        conv5 = Conv2D(
-            1024, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(pool4)
-        conv5 = Conv2D(
-            1024, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv5)
-        drop5 = Dropout(0.5)(conv5)
-
-        up6 = Conv2D(
-            512, 2, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(UpSampling2D(size=(2, 2))(drop5))
-        merge6 = concatenate([drop4, up6], axis=3)
-        conv6 = Conv2D(
-            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(merge6)
-        conv6 = Conv2D(
-            512, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv6)
-
-        up7 = Conv2D(
-            256, 2, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(UpSampling2D(size=(2, 2))(conv6))
-        merge7 = concatenate([conv3, up7], axis=3)
-        conv7 = Conv2D(
-            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(merge7)
-        conv7 = Conv2D(
-            256, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv7)
-
-        up8 = Conv2D(
-            128, 2, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(UpSampling2D(size=(2, 2))(conv7))
-        merge8 = concatenate([conv2, up8], axis=3)
-        conv8 = Conv2D(
-            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(merge8)
-        conv8 = Conv2D(
-            128, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv8)
-
-        up9 = Conv2D(
-            64, 2, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(UpSampling2D(size=(2, 2))(conv8))
-        merge9 = concatenate([conv1, up9], axis=3)
-        conv9 = Conv2D(
-            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(merge9)
-        conv9 = Conv2D(
-            64, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv9)
-        decode = Conv2D(
-            3, 3, activation="relu", padding="same", kernel_initializer="he_normal"
-        )(conv9)
 
         model = Model(self.input, decode)
 
