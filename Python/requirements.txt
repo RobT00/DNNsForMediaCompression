@@ -7,7 +7,7 @@ matplotlib
 keras
 regex
 scikit-learn
-opencv-python==4.1.1.26
+opencv-python==4.2.0.32
 tqdm
 setuptools>=41.0.0
 ipykernel
